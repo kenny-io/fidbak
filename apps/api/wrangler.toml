@@ -1,0 +1,14 @@
+name = "fidbak-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-01"
+
+# D1 database binding (use a real database_id in production deploys)
+[[d1_databases]]
+binding = "DB"
+database_name = "fidbakprod"
+database_id = "745c56c8-1b28-4c55-a7b7-8333671687d3"
+[vars]
+# FIDBAK_HMAC_SECRET = "..."
+# FIDBAK_SLACK_WEBHOOK = "https://hooks.slack.com/services/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"
+[observability]
+enabled = true

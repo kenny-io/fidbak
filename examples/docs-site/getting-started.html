@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Getting Started • Fidbak Docs Example</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; }
+      header, footer { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
+      main { padding: 16px; max-width: 860px; margin: 0 auto; }
+      nav a { margin-right: 12px; }
+      .content { min-height: 65vh; }
+      pre { background: #0b1021; color: #e6e6e6; padding: 12px; border-radius: 8px; overflow: auto; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/getting-started.html">Getting Started</a>
+        <a href="/api.html">API</a>
+      </nav>
+    </header>
+    <main>
+      <div class="content">
+        <h1>Getting Started</h1>
+        <p>Install the widget from npm and initialize it with your Site ID.</p>
+        <h2>Install</h2>
+        <pre><code>npm i @fidbak/widget
+# or
+pnpm add @fidbak/widget</code></pre>
+        <h2>Usage</h2>
+        <pre><code>import fidbak from '@fidbak/widget';
+
+fidbak('init', {
+  siteId: 'YOUR_SITE_ID',
+  theme: 'auto',
+  position: 'br'
+});</code></pre>
+        <h2>Next Steps</h2>
+        <p>Try leaving feedback with the floating button. The nearest heading and selected text will be captured.</p>
+      </div>
+    </main>
+    <footer>Example © 2025</footer>
+    <script type="module">
+      import fidbak from '@fidbak/widget';
+      fidbak('init', {
+        siteId: 'demo-site',
+        theme: 'light',
+        position: 'br',
+        draggable: true,
+        includeQuery: false,
+        captureSelection: true,
+        apiBaseUrl: 'http://localhost:8787',
+        webhookUrl: ['https://hooks.slack.com/services/****', 'Other_Webhook_URL'],
+        policy: {
+          corsAllow: [
+            'http://localhost:5173',
+            'http://localhost:5174',
+            'http://localhost:5181'
+          ],
+          slackChannel: '#social' // optional, override channel
+        },
+        debounceMs: 0,
+        themeOverrides: {
+          fontFamily: 'Inter, system-ui, sans-serif',
+          radius: { card: 20, input: 16, button: 24, thumb: 24, close: 24 },
+          colors: {
+            primaryStart: '#22c55e',
+            primaryEnd:   '#16a34a',
+            primaryText:  '#fff',
+            borderLight:  '#e5e7eb',
+            borderDark:   '#374151',
+            fabBgLight:   '#111',
+            fabBgDark:    '#111',
+            fabTextLight: '#fff',
+            fabTextDark:  '#fff',
+            focusRing: '#FFEB3B'
+          },
+          spacing: { cardPadding: 16 },
+          fab: { size: 64 }
+        },
+      });
+    </script>
+  </body>
+</html>

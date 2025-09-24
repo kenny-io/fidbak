@@ -1,0 +1,37 @@
+{
+  "name": "fidbak",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.0.0",
+  "description": "Fidbak is a lightweight, framework‑free user feedback widget (FAB + modal) with an edge API and a minimal dashboard. It lets you collect page‑aware feedback from any website and immediately fan it out to Slack or your own webhooks.",
+  "author": "Ekene Eze",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently -n api,dashboard,widget,docs,cdn -c green,blue,magenta,cyan,yellow \"pnpm -C apps/api dev\" \"pnpm -C apps/dashboard dev\" \"pnpm -C packages/widget dev\" \"pnpm -C examples/docs-site dev\" \"pnpm -C examples/cdn-umd dev\"",
+    "build": "pnpm -r build",
+    "test": "vitest run --reporter=dot",
+    "test:watch": "vitest",
+    "e2e": "playwright test",
+    "lint": "eslint . --ext .ts,.tsx,.js,.cjs,.mjs",
+    "format": "prettier --write .",
+    "release": "echo 'Release pipeline will run via CI (version, changelog, publish, deploy)'"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^20.12.12",
+    "@typescript-eslint/eslint-plugin": "^7.13.1",
+    "@typescript-eslint/parser": "^7.13.1",
+    "concurrently": "^9.0.1",
+    "eslint": "^9.11.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-jsx-a11y": "^6.9.0",
+    "eslint-plugin-react": "^7.35.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "prettier": "^3.3.3",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.2.4",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

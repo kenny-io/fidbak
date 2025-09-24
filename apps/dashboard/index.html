@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fidbak Dashboard</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="header-inner">
+        <div class="brand">
+          <div class="logo"></div>
+          <h1>Fidbak Dashboard</h1>
+        </div>
+        <div class="header-actions">
+          <span class="kicker" id="authHint">Basic auth</span>
+          <button id="themeToggle" class="btn ghost" title="Toggle theme">Theme</button>
+          <a href="/" class="btn">Home</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="card" style="padding:14px 12px; margin-bottom:12px;">
+        <div class="filters">
+          <input class="input" id="siteId" placeholder="Site ID (e.g. demo-site)" />
+          <select id="rating" class="input">
+            <option value="">All ratings</option>
+            <option value="up">👍 Up</option>
+            <option value="down">👎 Down</option>
+          </select>
+          <input class="input" id="q" placeholder="Search comment/page" />
+          <button id="load" class="btn primary">Load</button>
+        </div>
+        <div class="kicker">Tip: Set Site ID and click Load. Use rating and search to refine.</div>
+      </section>
+
+      <section class="card" style="overflow:hidden;">
+        <div class="table-wrap" style="overflow:auto;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th style="width:140px;">When</th>
+              <th style="width:80px;">Rating</th>
+              <th style="width:280px;">Page</th>
+              <th>Comment</th>
+              <th style="width:220px;">Email</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr>
+              <td colspan="5" class="empty">
+                <div style="display:flex;gap:12px;align-items:center;justify-content:center;flex-direction:column;padding:28px 12px;">
+                  <div class="spinner"></div>
+                  <div class="kicker" id="emptyMsg">No data yet. Enter a Site ID and click Load.</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+      </section>
+
+      <section class="card" style="padding:12px; margin-top:12px; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+        <div class="pagination" style="display:flex; gap:10px; align-items:center;">
+          <button id="prev" class="btn">Prev</button>
+          <button id="next" class="btn">Next</button>
+          <span class="kicker" id="count">Showing 0–0</span>
+          <label class="kicker" for="limit">Per page</label>
+          <select id="limit" class="input" style="width:auto">
+            <option>10</option>
+            <option selected>20</option>
+            <option>50</option>
+          </select>
+        </div>
+        <div class="chart" style="display:flex; gap:12px; align-items:center;">
+          <canvas id="thumbChart" width="220" height="60" style="background:transparent"></canvas>
+          <span class="kicker" id="chartLabel">👍 0 • 👎 0</span>
+        </div>
+      </section>
+
+      <div class="footer">Fidbak © <span id="year"></span></div>
+    </main>
+
+    <div id="toast" class="toast" style="display:none"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+  </html>

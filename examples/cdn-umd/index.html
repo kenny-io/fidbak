@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fidbak UMD CDN Example</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; }
+      h1 { margin-bottom: 8px; }
+      p { color: #4b5563; }
+      .box { max-width: 760px; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>UMD CDN Example</h1>
+      <p>This page loads the global <code>fidbak</code> from the UMD bundle (simulating a CDN drop).</p>
+      <h2>Try it</h2>
+      <p>Click the floating button to leave feedback.</p>
+      <h2>Section A</h2>
+      <p>Select some text here and then click the FAB.</p>
+    </div>
+    <!-- Simulate CDN by loading the built UMD file from the monorepo using Vite's file server -->
+    <script src="/@fs/Users/ekene/CascadeProjects/fidbak/packages/widget/dist/fidbak.fab.min.global.js"></script>
+    <script>
+      // global is available as window.fidbak
+      window.fidbak('init', {
+        siteId: 'demo-site',
+        theme: 'auto',
+        position: 'bl',
+        draggable: true,
+        includeQuery: false,
+        captureSelection: true,
+        apiBaseUrl: 'http://localhost:8787',
+        webhookUrl: ['https://hooks.slack.com/services/****', 'Other_Webhook_URL'],
+        policy: {
+          corsAllow: [
+            'http://localhost:5174',  // ESM docs
+            'http://localhost:5173',  // Dashboard
+            'http://localhost:5181'   // UMD example
+          ]
+        },
+        debounceMs: 0,
+        themeOverrides: {
+          fontFamily: 'Inter, system-ui, sans-serif',
+          radius: { card: 20, input: 16, button: 24, thumb: 24, close: 24 },
+          colors: {
+            primaryStart: '#6366f1',
+            primaryEnd:   '#4f46e5',
+            primaryText:  '#fff',
+            borderLight:  '#e5e7eb',
+            borderDark:   '#374151',
+            fabBgLight:   '#111',
+            fabBgDark:    '#111',
+            fabTextLight: '#fff',
+            fabTextDark:  '#fff',
+            focusRing: '#FFEB3B'
+          },
+          spacing: { cardPadding: 16 },
+          fab: { size: 64 }
+        },
+      });
+    </script>
+  </body>
+</html>
