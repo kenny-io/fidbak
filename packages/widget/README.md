@@ -22,6 +22,7 @@ pnpm add @fidbak/widget
     siteId: 'demo-site',
     apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
     theme: 'auto',
+    webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ']
   });
   // Later: window.fidbak('open') to open programmatically
 </script>
@@ -35,7 +36,8 @@ pnpm add @fidbak/widget
   window.fidbak('init', {
     siteId: 'demo-site',
     apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
-    theme: 'auto'
+    theme: 'auto',
+    webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ']
   });
 </script>
 ```

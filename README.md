@@ -42,26 +42,26 @@ npx wrangler d1 execute fidbak \
   import fidbak from '@fidbak/widget';
   fidbak('init', {
     siteId: 'demo-site',
-    apiBaseUrl: 'http://localhost:8787',
+    apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
     webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ'],
-    policy: {
-      corsAllow: ['http://localhost:5173','http://localhost:5174','http://localhost:5181']
-    },
-    debounceMs: 0
+    theme: 'auto',
+    debounceMs: 30000
   });
+  // Tip: enable logs temporarily with localStorage.setItem('fidbak:debug','1')
 </script>
 ```
 * UMD (CDN style): open 
 examples/cdn-umd/index.html and ensure this exists:
 
 ```bash
-<script src="/@fs/Users/you/path/fidbak/packages/widget/dist/fidbak.fab.min.global.js"></script>
+<script src="https://unpkg.com/@fidbak/widget@0.1.2/dist/fidbak.fab.min.global.js"></script>
 <script>
   window.fidbak('init', {
     siteId: 'demo-site',
-    apiBaseUrl: 'http://localhost:8787',
+    apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
     webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ'],
-    debounceMs: 0
+    theme: 'auto',
+    debounceMs: 30000
   });
 </script>
 ```
