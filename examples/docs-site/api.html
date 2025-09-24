@@ -48,17 +48,16 @@
         draggable: true,
         includeQuery: false,
         captureSelection: true,
-        apiBaseUrl: 'http://localhost:8787',
-        webhookUrl: ['https://hooks.slack.com/services/****', 'Other_Webhook_URL'],
+        apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
+        webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ'],
         policy: {
           corsAllow: [
-            'http://localhost:5173',
-            'http://localhost:5174',
-            'http://localhost:5181'
+            'https://your-docs.example.com',
+            'https://dashboard.yourdomain.com'
           ],
-          slackChannel: '#social' // optional, override channel
+          slackChannel: '#docs-feedback' // optional, override channel
         },
-        debounceMs: 0,
+        debounceMs: 30000,
         themeOverrides: {
           fontFamily: 'Inter, system-ui, sans-serif',
           radius: { card: 20, input: 16, button: 24, thumb: 24, close: 24 },
