@@ -20,8 +20,8 @@
       <h2>Section A</h2>
       <p>Select some text here and then click the FAB.</p>
     </div>
-    <!-- Simulate CDN by loading the built UMD file from the monorepo using Vite's file server -->
-    <script src="/@fs/Users/ekene/CascadeProjects/fidbak/packages/widget/dist/fidbak.fab.min.global.js"></script>
+    <!-- Use the published UMD from the CDN -->
+    <script src="https://unpkg.com/@fidbak/widget@0.1.2/dist/fidbak.fab.min.global.js"></script>
     <script>
       // global is available as window.fidbak
       window.fidbak('init', {
@@ -31,15 +31,7 @@
         draggable: true,
         includeQuery: false,
         captureSelection: true,
-        apiBaseUrl: 'http://localhost:8787',
-        webhookUrl: ['https://hooks.slack.com/services/****', 'Other_Webhook_URL'],
-        policy: {
-          corsAllow: [
-            'http://localhost:5174',  // ESM docs
-            'http://localhost:5173',  // Dashboard
-            'http://localhost:5181'   // UMD example
-          ]
-        },
+        apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
         debounceMs: 0,
         themeOverrides: {
           fontFamily: 'Inter, system-ui, sans-serif',
