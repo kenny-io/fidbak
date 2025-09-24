@@ -1,6 +1,6 @@
 {
   "name": "@fidbak/widget",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Framework-free feedback FAB + modal (UMD for CDN, ESM for npm)",
   "type": "module",
   "main": "dist/fidbak.fab.min.js",
@@ -17,7 +17,10 @@
   },
   "unpkg": "dist/fidbak.fab.min.global.js",
   "jsdelivr": "dist/fidbak.fab.min.global.js",
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -25,14 +28,25 @@
   },
   "sideEffects": false,
   "license": "MIT",
-  "keywords": ["feedback","widget","umd","esm","cloudflare","workers"],
+  "keywords": [
+    "feedback",
+    "widget",
+    "umd",
+    "esm",
+    "cloudflare",
+    "workers"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/your-org/fidbak.git"
   },
-  "bugs": { "url": "https://github.com/your-org/fidbak/issues" },
+  "bugs": {
+    "url": "https://github.com/your-org/fidbak/issues"
+  },
   "homepage": "https://github.com/your-org/fidbak#readme",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "tsup": "^8.2.4",
     "typescript": "^5.5.4",
