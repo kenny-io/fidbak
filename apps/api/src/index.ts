@@ -228,6 +228,89 @@ export default {
       return json({ accepted: true, id: row.id }, { status: 202 }, allow);
     }
 
+    // GET /v1/sites  (list sites)
+    if (url.pathname === '/v1/sites' && request.method === 'GET') {
+      const { origin: reqOrigin } = cors(request);
+      const ownerEmail = (url.searchParams.get('ownerEmail') || '').trim();
+      try {
+        const sites = await listSites(env, ownerEmail || undefined);
+        return json({ sites }, {}, reqOrigin || '*');
+      } catch (e) {
+        return bad('list_failed', reqOrigin || '*');
+      }
+    }
+
+    // POST /v1/sites  (self-serve create)
+    if (url.pathname === '/v1/sites' && request.method === 'POST') {
+      const { origin: reqOrigin } = cors(request);
+      let body: any = {};
+      try {
+        body = await request.json();
+      } catch {}
+      const id = (body?.id || '').trim();
+      const name = (body?.name || '').trim() || id;
+      const owner_email = (body?.ownerEmail || '').trim() || null;
+      const originToAllow = (body?.origin || '').trim();
+      const moreOrigins = Array.isArray(body?.origins) ? body.origins.filter((o: any) => typeof o === 'string' && /^https?:\/\//.test(o)).map((s: string) => s.trim()) : [];
+      if (!id || !/^[a-z0-9-]{3,}$/.test(id)) return bad('invalid_site_id', reqOrigin || '*');
+      if (!originToAllow || !/^https?:\/\//.test(originToAllow)) return bad('invalid_origin', reqOrigin || '*');
+
+      const verify_token = crypto.randomUUID();
+      const set = new Set<string>([originToAllow, ...moreOrigins]);
+      const corsArr = Array.from(set);
+      try {
+        await upsertSite(env, { id, name, owner_email, cors: corsArr, verify_token });
+        const dashboard = env.FIDBAK_DASHBOARD_BASE
+          ? `${env.FIDBAK_DASHBOARD_BASE}/?siteId=${encodeURIComponent(id)}`
+          : undefined;
+        return json(
+          { ok: true, siteId: id, dashboard, cors: corsArr, verifyToken: verify_token },
+          { status: 201 },
+          reqOrigin || '*',
+        );
+      } catch {
+        return bad('create_failed', reqOrigin || '*');
+      }
+    }
+
+    // POST /v1/sites/:id/origins  (add/remove origins)
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/origins$/);
+      if (m && request.method === 'POST') {
+        const { origin: reqOrigin } = cors(request);
+        const siteId = decodeURIComponent(m[1] || '');
+        let body: any = {};
+        try {
+          body = await request.json();
+        } catch {}
+        const add: string[] = Array.isArray(body?.add) ? body.add : [];
+        const remove: string[] = Array.isArray(body?.remove) ? body.remove : [];
+        const site = await getSite(env, siteId);
+        const existing = new Set<string>((site?.cors || []).map(String));
+        for (const a of add) if (/^https?:\/\//.test(a)) existing.add(a);
+        for (const r of remove) existing.delete(r);
+        const updated = Array.from(existing);
+        try {
+          await updateSiteCors(env, siteId, updated);
+          return json({ ok: true, siteId, cors: updated }, { status: 200 }, reqOrigin || '*');
+        } catch {
+          return bad('update_failed', reqOrigin || '*');
+        }
+      }
+    }
+
+    // GET /v1/sites/:id  (site details)
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)$/);
+      if (m && request.method === 'GET') {
+        const siteId = decodeURIComponent(m[1] || '');
+        const { origin: reqOrigin } = cors(request);
+        const site = await getSiteFull(env, siteId);
+        if (!site) return notFound(reqOrigin || '*');
+        return json(site, {}, reqOrigin || '*');
+      }
+    }
+
     // GET /v1/sites/:id/feedback
     const match = url.pathname.match(/^\/v1\/sites\/([^/]+)\/feedback$/);
     if (match && request.method === 'GET') {
@@ -317,6 +400,20 @@ export default {
       return json({ total, lastN: { days, up, down, total: up + down } }, {}, allow);
     }
 
+    // GET /v1/sites/:id/stats?days=7
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/stats$/);
+      if (m && request.method === 'GET') {
+        const siteId = decodeURIComponent(m[1] || '');
+        const { origin: reqOrigin } = cors(request);
+        const allow = corsForSite(siteId, reqOrigin || undefined) || reqOrigin || '*';
+        const days = Math.max(1, Math.min(90, parseInt(url.searchParams.get('days') || '7', 10)));
+        const stats = await computeSiteStats(env, siteId, days);
+        if (!stats) return notFound(allow);
+        return json(stats, {}, allow);
+      }
+    }
+
     return notFound(origin || '*');
   },
 } satisfies ExportedHandler<Env>;
@@ -334,6 +431,138 @@ async function getSite(env: Env, siteId: string): Promise<{ hmac_secret?: string
     } catch {}
   }
   return SITES[siteId];
+}
+
+// Full site for dashboard
+async function getSiteFull(
+  env: Env,
+  siteId: string,
+): Promise<
+  { id: string; name: string; owner_email?: string | null; cors: string[]; created_at?: string; verified_at?: string | null } | undefined
+> {
+  if (env.DB) {
+    try {
+      const row = await env.DB
+        .prepare('SELECT id, name, owner_email, cors_json, created_at, verified_at FROM sites WHERE id = ?')
+        .bind(siteId)
+        .first<{
+          id: string;
+          name: string;
+          owner_email?: string | null;
+          cors_json?: string;
+          created_at?: string;
+          verified_at?: string | null;
+        }>();
+      if (row)
+        return {
+          id: row.id,
+          name: row.name,
+          owner_email: row.owner_email ?? null,
+          cors: row.cors_json ? JSON.parse(row.cors_json) : [],
+          created_at: row.created_at,
+          verified_at: row.verified_at ?? null,
+        };
+    } catch {}
+  }
+  const m = SITES[siteId];
+  if (!m) return undefined;
+  return { id: siteId, name: m.name, owner_email: null, cors: m.cors || [], created_at: undefined, verified_at: null };
+}
+
+async function upsertSite(
+  env: Env,
+  data: { id: string; name: string; owner_email?: string | null; cors: string[]; verify_token?: string },
+) {
+  if (env.DB) {
+    const cors_json = JSON.stringify(data.cors || []);
+    await env.DB
+      .prepare(
+        `INSERT INTO sites (id, name, owner_email, cors_json, created_at, verify_token)
+         VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, owner_email=excluded.owner_email, cors_json=excluded.cors_json`,
+      )
+      .bind(data.id, data.name, data.owner_email || null, cors_json, data.verify_token || null)
+      .run();
+    return;
+  }
+  // memory fallback
+  SITES[data.id] = { name: data.name, cors: data.cors };
+}
+
+async function updateSiteCors(env: Env, siteId: string, cors: string[]) {
+  if (env.DB) {
+    await env.DB.prepare('UPDATE sites SET cors_json = ? WHERE id = ?').bind(JSON.stringify(cors || []), siteId).run();
+    return;
+  }
+  if (SITES[siteId]) SITES[siteId].cors = cors;
+}
+
+// List sites with basic metadata and feedback_count
+async function listSites(
+  env: Env,
+  ownerEmail?: string,
+): Promise<Array<{
+  id: string;
+  name?: string;
+  owner_email?: string | null;
+  cors: string[];
+  created_at: string;
+  verified_at?: string | null;
+  feedback_count?: number;
+}>> {
+  if (env.DB) {
+    try {
+      const where = ownerEmail ? 'WHERE s.owner_email = ?' : '';
+      const sql = `SELECT s.id, s.name, s.owner_email, s.cors_json, s.created_at, s.verified_at,
+                          (SELECT COUNT(*) FROM feedback f WHERE f.site_id = s.id) AS feedback_count
+                   FROM sites s ${where}
+                   ORDER BY datetime(s.created_at) DESC`;
+      const stmt = env.DB.prepare(sql);
+      const res = ownerEmail
+        ? await stmt.bind(ownerEmail).all<{
+            id: string;
+            name?: string;
+            owner_email?: string | null;
+            cors_json?: string;
+            created_at: string;
+            verified_at?: string | null;
+            feedback_count?: number;
+          }>()
+        : await stmt.all<{
+            id: string;
+            name?: string;
+            owner_email?: string | null;
+            cors_json?: string;
+            created_at: string;
+            verified_at?: string | null;
+            feedback_count?: number;
+          }>();
+      const rows = (res.results as any[]) || [];
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        owner_email: r.owner_email ?? null,
+        cors: r.cors_json ? JSON.parse(r.cors_json) : [],
+        created_at: r.created_at,
+        verified_at: r.verified_at ?? null,
+        feedback_count: Number(r.feedback_count || 0),
+      }));
+    } catch {
+      // fall through to memory
+    }
+  }
+  // Memory fallback
+  const entries = Object.entries(SITES);
+  const filtered = ownerEmail ? [] : entries; // memory store has no owner tracking
+  return filtered.map(([id, m]) => ({
+    id,
+    name: m.name,
+    owner_email: null,
+    cors: m.cors || [],
+    created_at: new Date().toISOString(),
+    verified_at: null,
+    feedback_count: MEM.feedback.filter((f) => f.site_id === id).length,
+  }));
 }
 
 async function storeFeedback(env: Env, row: FeedbackRow) {
@@ -441,4 +670,100 @@ async function postSlack(webhook: string, env: Env, row: FeedbackRow, policy?: a
   }).catch((e) => {
     console.warn('fidbak: slack webhook error', e?.message || e);
   });
+}
+
+// ---------- analytics helpers ----------
+async function computeSiteStats(
+  env: Env,
+  siteId: string,
+  days: number,
+): Promise<{
+  totals: { all: number; up: number; down: number; satisfactionPct: number };
+  lastN: { days: number; up: number; down: number; total: number; satisfactionPct: number };
+  prevN: { days: number; up: number; down: number; total: number; satisfactionPct: number };
+  deltas: { totalPct: number; satisfactionPct: number };
+} | undefined> {
+  const now = Date.now();
+  const winMs = days * 24 * 60 * 60 * 1000;
+  const sinceIso = new Date(now - winMs).toISOString();
+  const prevSinceIso = new Date(now - 2 * winMs).toISOString();
+  if (env.DB) {
+    try {
+      const totalRow = await env.DB
+        .prepare("SELECT COUNT(*) AS c, SUM(CASE WHEN rating='up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN rating='down' THEN 1 ELSE 0 END) AS down FROM feedback WHERE site_id = ?")
+        .bind(siteId)
+        .first<{ c: number; up: number; down: number }>();
+      const lastRow = await env.DB
+        .prepare("SELECT SUM(CASE WHEN rating='up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN rating='down' THEN 1 ELSE 0 END) AS down FROM feedback WHERE site_id = ? AND datetime(created_at) >= datetime(?)")
+        .bind(siteId, sinceIso)
+        .first<{ up: number; down: number }>();
+      const prevRow = await env.DB
+        .prepare("SELECT SUM(CASE WHEN rating='up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN rating='down' THEN 1 ELSE 0 END) AS down FROM feedback WHERE site_id = ? AND datetime(created_at) < datetime(?) AND datetime(created_at) >= datetime(?)")
+        .bind(siteId, sinceIso, prevSinceIso)
+        .first<{ up: number; down: number }>();
+
+      const all = Number(totalRow?.c || 0);
+      const upAll = Number(totalRow?.up || 0);
+      const downAll = Number(totalRow?.down || 0);
+      const satAll = all > 0 ? (upAll / (upAll + downAll)) * 100 : 0;
+
+      const lastUp = Number(lastRow?.up || 0);
+      const lastDown = Number(lastRow?.down || 0);
+      const lastTotal = lastUp + lastDown;
+      const lastSat = lastTotal > 0 ? (lastUp / lastTotal) * 100 : 0;
+
+      const prevUp = Number(prevRow?.up || 0);
+      const prevDown = Number(prevRow?.down || 0);
+      const prevTotal = prevUp + prevDown;
+      const prevSat = prevTotal > 0 ? (prevUp / prevTotal) * 100 : 0;
+
+      const totalPct = prevTotal > 0 ? ((lastTotal - prevTotal) / prevTotal) * 100 : (lastTotal > 0 ? 100 : 0);
+      const satPct = prevTotal > 0 ? (lastSat - prevSat) : lastSat;
+
+      return {
+        totals: { all, up: upAll, down: downAll, satisfactionPct: round2(satAll) },
+        lastN: { days, up: lastUp, down: lastDown, total: lastTotal, satisfactionPct: round2(lastSat) },
+        prevN: { days, up: prevUp, down: prevDown, total: prevTotal, satisfactionPct: round2(prevSat) },
+        deltas: { totalPct: round2(totalPct), satisfactionPct: round2(satPct) },
+      };
+    } catch {
+      // fall through to memory
+    }
+  }
+  // memory fallback
+  const allRows = MEM.feedback.filter((f) => f.site_id === siteId);
+  const all = allRows.length;
+  const upAll = allRows.filter((f) => f.rating === 'up').length;
+  const downAll = allRows.filter((f) => f.rating === 'down').length;
+  const satAll = all > 0 ? (upAll / (upAll + downAll)) * 100 : 0;
+
+  const since = now - winMs;
+  const prevSince = now - 2 * winMs;
+  const lastRows = allRows.filter((f) => new Date(f.created_at).getTime() >= since);
+  const prevRows = allRows.filter((f) => {
+    const t = new Date(f.created_at).getTime();
+    return t < since && t >= prevSince;
+  });
+  const lastUp = lastRows.filter((f) => f.rating === 'up').length;
+  const lastDown = lastRows.filter((f) => f.rating === 'down').length;
+  const lastTotal = lastRows.length;
+  const lastSat = lastTotal > 0 ? (lastUp / lastTotal) * 100 : 0;
+  const prevUp = prevRows.filter((f) => f.rating === 'up').length;
+  const prevDown = prevRows.filter((f) => f.rating === 'down').length;
+  const prevTotal = prevRows.length;
+  const prevSat = prevTotal > 0 ? (prevUp / prevTotal) * 100 : 0;
+
+  const totalPct = prevTotal > 0 ? ((lastTotal - prevTotal) / prevTotal) * 100 : (lastTotal > 0 ? 100 : 0);
+  const satPct = prevTotal > 0 ? (lastSat - prevSat) : lastSat;
+
+  return {
+    totals: { all, up: upAll, down: downAll, satisfactionPct: round2(satAll) },
+    lastN: { days, up: lastUp, down: lastDown, total: lastTotal, satisfactionPct: round2(lastSat) },
+    prevN: { days, up: prevUp, down: prevDown, total: prevTotal, satisfactionPct: round2(prevSat) },
+    deltas: { totalPct: round2(totalPct), satisfactionPct: round2(satPct) },
+  };
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
 }

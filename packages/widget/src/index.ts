@@ -102,7 +102,8 @@ function openModal(invoker?: HTMLElement) {
   });
 
   const card = document.createElement('div');
-  card.style.width = 'min(92vw, 420px)';
+  // Increase width by >=30% (from 420px -> 560px)
+  card.style.width = 'min(92vw, 560px)';
   const theme = resolveTheme();
   card.style.background = theme === 'dark' ? v.colors.cardBgDark : v.colors.cardBgLight;
   card.style.borderRadius = `${v.radiusCard}px`;
@@ -111,7 +112,7 @@ function openModal(invoker?: HTMLElement) {
   card.style.color = theme === 'dark' ? v.colors.textDark : v.colors.textLight;
   card.style.fontFamily = v.fontFamily;
   card.style.boxSizing = 'border-box';
-  card.style.maxWidth = '420px';
+  card.style.maxWidth = '560px';
   card.style.maxHeight = '90vh';
   card.style.overflow = 'auto';
 
@@ -123,7 +124,7 @@ function openModal(invoker?: HTMLElement) {
   header.style.marginBottom = '8px';
 
   const title = document.createElement('h2');
-  title.textContent = 'Send feedback';
+  title.textContent = 'Send your feedback';
   title.style.fontSize = '20px';
   title.style.fontWeight = '600';
   title.style.margin = '0';
@@ -148,6 +149,13 @@ function openModal(invoker?: HTMLElement) {
 
   header.appendChild(title);
   header.appendChild(closeX);
+
+  // Per-page context subtext to make it explicit this is page-scoped
+  const sub = document.createElement('p');
+  sub.style.margin = '8px 0 0 0';
+  sub.style.fontSize = '13px';
+  sub.style.color = '#6b7280';
+  sub.textContent = `Was the content on this page helpful or lacking? let us know below`;
 
   const rateLabel = document.createElement('div');
   rateLabel.textContent = 'How was your experience?';
@@ -217,13 +225,13 @@ function openModal(invoker?: HTMLElement) {
   });
 
   const emailLabel = document.createElement('div');
-  emailLabel.innerHTML = 'Email <span style="color:#9ca3af">(optional)</span>';
+  emailLabel.innerHTML = 'Name / Email <span style="color:#9ca3af">(optional)</span>';
   emailLabel.style.fontSize = '14px';
   emailLabel.style.margin = '8px 0 6px 0';
 
   const email = document.createElement('input');
   email.type = 'email';
-  email.placeholder = 'Email (optional)';
+  email.placeholder = 'Name / Email (optional)';
   email.style.width = '100%';
   email.style.marginTop = '8px';
   email.style.background = theme === 'dark' ? '#0f0f0f' : '#fff';
@@ -263,6 +271,44 @@ function openModal(invoker?: HTMLElement) {
   submit.type = 'button';
   submit.textContent = 'Send';
   stylePrimary(submit, theme, v);
+  // Renders a thank-you state inside the same modal, then auto-closes
+  function showThanks() {
+    try {
+      card.innerHTML = '';
+      const th = document.createElement('div');
+      th.style.display = 'grid';
+      th.style.placeItems = 'center';
+      th.style.textAlign = 'center';
+      th.style.padding = '28px 8px 8px 8px';
+      const big = document.createElement('div');
+      big.textContent = '🎉';
+      big.style.fontSize = '42px';
+      const h = document.createElement('h2');
+      h.textContent = 'Thank you!';
+      h.style.margin = '8px 0 6px 0';
+      h.style.fontSize = '20px';
+      h.style.fontWeight = '600';
+      const p = document.createElement('p');
+      p.textContent = 'We appreciate your feedback.';
+      p.style.margin = '0';
+      p.style.color = '#9ca3af';
+      p.style.fontSize = '14px';
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = 'Close';
+      close.style.marginTop = '14px';
+      stylePrimary(close, theme, v);
+      close.addEventListener('click', () => closeModal(overlay));
+      th.appendChild(big);
+      th.appendChild(h);
+      th.appendChild(p);
+      th.appendChild(close);
+      card.appendChild(th);
+      // auto-close after a short delay
+      const ms = 2200;
+      setTimeout(() => closeModal(overlay), ms);
+    } catch {}
+  }
   submit.addEventListener('click', async () => {
     const rating = STATE.currentRating;
     if (!rating) {
@@ -283,7 +329,7 @@ function openModal(invoker?: HTMLElement) {
       dlog('submit', { rating });
       await sendFeedback(payload as any);
       dlog('submit success');
-      closeModal(overlay);
+      showThanks();
     } catch (err) {
       derror('submit error', (err as Error)?.message || err);
     }
@@ -295,6 +341,7 @@ function openModal(invoker?: HTMLElement) {
   actions.appendChild(submit);
 
   card.appendChild(header);
+  card.appendChild(sub);
   card.appendChild(rateLabel);
   card.appendChild(controls);
   card.appendChild(commentLabel);

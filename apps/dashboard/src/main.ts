@@ -13,9 +13,13 @@ const chartCanvas = document.getElementById('thumbChart') as HTMLCanvasElement |
 const chartLabel = document.getElementById('chartLabel') as HTMLSpanElement | null;
 
 const API_BASE = (() => {
-  // Prefer explicit env if later added; for now detect dev port and fallback.
+  // 1) Runtime env (set in /public/env.js): window.__FIDBAK_API_BASE = 'https://api.example.com'
+  const w = window as any;
+  if (typeof w.__FIDBAK_API_BASE === 'string' && w.__FIDBAK_API_BASE) return w.__FIDBAK_API_BASE;
+  // 2) Dev autodetect (Vite)
   const port = location.port;
   if (port === '5173') return 'http://localhost:8787';
+  // 3) Relative (same-origin) by default in prod
   return '';
 })();
 

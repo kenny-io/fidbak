@@ -7,81 +7,114 @@
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <header class="header">
-      <div class="header-inner">
-        <div class="brand">
+    <div class="layout">
+      <!-- Sidebar -->
+      <aside class="sidebar card">
+        <div class="side-brand">
           <div class="logo"></div>
-          <h1>Fidbak Dashboard</h1>
+          <span>Fidbak</span>
         </div>
-        <div class="header-actions">
-          <span class="kicker" id="authHint">Basic auth</span>
-          <button id="themeToggle" class="btn ghost" title="Toggle theme">Theme</button>
-          <a href="/" class="btn">Home</a>
+        <nav class="side-nav">
+          <a class="nav-item active" href="#">Dashboard</a>
+          <a class="nav-item" href="/new-site.html">Create site</a>
+          <a class="nav-item" href="#feedback">Feedback</a>
+        </nav>
+        <div class="side-footer">
+          <button id="themeToggle" class="btn ghost">Toggle theme</button>
         </div>
+      </aside>
+
+      <!-- Main content -->
+      <div class="content">
+        <header class="topbar card">
+          <div class="topbar-left">
+            <h1>Dashboard</h1>
+            <span class="kicker">Monitor feedback across your sites</span>
+          </div>
+          <div class="topbar-actions">
+            <a class="btn primary" href="/new-site.html">Create site</a>
+          </div>
+        </header>
+
+        <!-- Hero / Quick Start -->
+        <section class="hero card">
+          <div class="hero-text">
+            <h2>Collect feedback in minutes</h2>
+            <p class="kicker">Create a site, paste the widget snippet, and watch responses roll in.</p>
+            <div class="hero-actions">
+              <a class="btn primary" href="/new-site.html">Create site</a>
+              <a class="btn" href="https://unpkg.com/@fidbak/widget@0.1.2/dist/fidbak.fab.min.global.js">CDN</a>
+            </div>
+          </div>
+          <div class="hero-stats">
+            <div class="stat">
+              <div class="stat-label">Last 7 days</div>
+              <div class="stat-value" id="chartLabel">👍 0 • 👎 0</div>
+            </div>
+            <canvas id="thumbChart" width="260" height="70"></canvas>
+          </div>
+        </section>
+
+        <!-- Filters -->
+        <section class="card filters-card">
+          <div class="filters">
+            <input class="input" id="siteId" placeholder="Site ID (e.g. demo-site)" />
+            <select id="rating" class="input">
+              <option value="">All ratings</option>
+              <option value="up">👍 Up</option>
+              <option value="down">👎 Down</option>
+            </select>
+            <input class="input" id="q" placeholder="Search comment/page" />
+            <button id="load" class="btn primary">Load</button>
+          </div>
+          <div class="kicker">Tip: Enter a Site ID and click Load. Use rating and search to refine.</div>
+        </section>
+
+        <!-- Table -->
+        <section id="feedback" class="card table-card">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th style="width:140px;">When</th>
+                  <th style="width:80px;">Rating</th>
+                  <th style="width:280px;">Page</th>
+                  <th>Comment</th>
+                  <th style="width:220px;">Email</th>
+                </tr>
+              </thead>
+              <tbody id="rows">
+                <tr>
+                  <td colspan="5" class="empty">
+                    <div class="empty-wrap">
+                      <div class="spinner"></div>
+                      <div class="kicker" id="emptyMsg">No data yet. Enter a Site ID and click Load.</div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Pagination -->
+        <section class="card pager-card">
+          <div class="pagination">
+            <button id="prev" class="btn">Prev</button>
+            <button id="next" class="btn">Next</button>
+            <span class="kicker" id="count">Showing 0–0</span>
+            <label class="kicker" for="limit">Per page</label>
+            <select id="limit" class="input limit">
+              <option>10</option>
+              <option selected>20</option>
+              <option>50</option>
+            </select>
+          </div>
+        </section>
+
+        <div class="footer">Fidbak © <span id="year"></span></div>
       </div>
-    </header>
-
-    <main>
-      <section class="card" style="padding:14px 12px; margin-bottom:12px;">
-        <div class="filters">
-          <input class="input" id="siteId" placeholder="Site ID (e.g. demo-site)" />
-          <select id="rating" class="input">
-            <option value="">All ratings</option>
-            <option value="up">👍 Up</option>
-            <option value="down">👎 Down</option>
-          </select>
-          <input class="input" id="q" placeholder="Search comment/page" />
-          <button id="load" class="btn primary">Load</button>
-        </div>
-        <div class="kicker">Tip: Set Site ID and click Load. Use rating and search to refine.</div>
-      </section>
-
-      <section class="card" style="overflow:hidden;">
-        <div class="table-wrap" style="overflow:auto;">
-        <table class="table">
-          <thead>
-            <tr>
-              <th style="width:140px;">When</th>
-              <th style="width:80px;">Rating</th>
-              <th style="width:280px;">Page</th>
-              <th>Comment</th>
-              <th style="width:220px;">Email</th>
-            </tr>
-          </thead>
-          <tbody id="rows">
-            <tr>
-              <td colspan="5" class="empty">
-                <div style="display:flex;gap:12px;align-items:center;justify-content:center;flex-direction:column;padding:28px 12px;">
-                  <div class="spinner"></div>
-                  <div class="kicker" id="emptyMsg">No data yet. Enter a Site ID and click Load.</div>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        </div>
-      </section>
-
-      <section class="card" style="padding:12px; margin-top:12px; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
-        <div class="pagination" style="display:flex; gap:10px; align-items:center;">
-          <button id="prev" class="btn">Prev</button>
-          <button id="next" class="btn">Next</button>
-          <span class="kicker" id="count">Showing 0–0</span>
-          <label class="kicker" for="limit">Per page</label>
-          <select id="limit" class="input" style="width:auto">
-            <option>10</option>
-            <option selected>20</option>
-            <option>50</option>
-          </select>
-        </div>
-        <div class="chart" style="display:flex; gap:12px; align-items:center;">
-          <canvas id="thumbChart" width="220" height="60" style="background:transparent"></canvas>
-          <span class="kicker" id="chartLabel">👍 0 • 👎 0</span>
-        </div>
-      </section>
-
-      <div class="footer">Fidbak © <span id="year"></span></div>
-    </main>
+    </div>
 
     <div id="toast" class="toast" style="display:none"></div>
 

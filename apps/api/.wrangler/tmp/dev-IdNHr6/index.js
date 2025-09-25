@@ -229,6 +229,86 @@ var src_default = {
       );
       return json({ accepted: true, id: row.id }, { status: 202 }, allow);
     }
+    if (url.pathname === "/v1/sites" && request.method === "GET") {
+      const { origin: reqOrigin } = cors(request);
+      const ownerEmail = (url.searchParams.get("ownerEmail") || "").trim();
+      try {
+        const sites = await listSites(env, ownerEmail || void 0);
+        return json({ sites }, {}, reqOrigin || "*");
+      } catch (e) {
+        return bad("list_failed", reqOrigin || "*");
+      }
+    }
+    if (url.pathname === "/v1/sites" && request.method === "POST") {
+      const { origin: reqOrigin } = cors(request);
+      let body = {};
+      try {
+        body = await request.json();
+      } catch {
+      }
+      const id = (body?.id || "").trim();
+      const name = (body?.name || "").trim() || id;
+      const owner_email = (body?.ownerEmail || "").trim() || null;
+      const originToAllow = (body?.origin || "").trim();
+      const moreOrigins = Array.isArray(body?.origins) ? body.origins.filter((o) => typeof o === "string" && /^https?:\/\//.test(o)).map((s) => s.trim()) : [];
+      if (!id || !/^[a-z0-9-]{3,}$/.test(id))
+        return bad("invalid_site_id", reqOrigin || "*");
+      if (!originToAllow || !/^https?:\/\//.test(originToAllow))
+        return bad("invalid_origin", reqOrigin || "*");
+      const verify_token = crypto.randomUUID();
+      const set = /* @__PURE__ */ new Set([originToAllow, ...moreOrigins]);
+      const corsArr = Array.from(set);
+      try {
+        await upsertSite(env, { id, name, owner_email, cors: corsArr, verify_token });
+        const dashboard = env.FIDBAK_DASHBOARD_BASE ? `${env.FIDBAK_DASHBOARD_BASE}/?siteId=${encodeURIComponent(id)}` : void 0;
+        return json(
+          { ok: true, siteId: id, dashboard, cors: corsArr, verifyToken: verify_token },
+          { status: 201 },
+          reqOrigin || "*"
+        );
+      } catch {
+        return bad("create_failed", reqOrigin || "*");
+      }
+    }
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/origins$/);
+      if (m && request.method === "POST") {
+        const { origin: reqOrigin } = cors(request);
+        const siteId = decodeURIComponent(m[1] || "");
+        let body = {};
+        try {
+          body = await request.json();
+        } catch {
+        }
+        const add = Array.isArray(body?.add) ? body.add : [];
+        const remove = Array.isArray(body?.remove) ? body.remove : [];
+        const site = await getSite(env, siteId);
+        const existing = new Set((site?.cors || []).map(String));
+        for (const a of add)
+          if (/^https?:\/\//.test(a))
+            existing.add(a);
+        for (const r of remove)
+          existing.delete(r);
+        const updated = Array.from(existing);
+        try {
+          await updateSiteCors(env, siteId, updated);
+          return json({ ok: true, siteId, cors: updated }, { status: 200 }, reqOrigin || "*");
+        } catch {
+          return bad("update_failed", reqOrigin || "*");
+        }
+      }
+    }
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)$/);
+      if (m && request.method === "GET") {
+        const siteId = decodeURIComponent(m[1] || "");
+        const { origin: reqOrigin } = cors(request);
+        const site = await getSiteFull(env, siteId);
+        if (!site)
+          return notFound(reqOrigin || "*");
+        return json(site, {}, reqOrigin || "*");
+      }
+    }
     const match = url.pathname.match(/^\/v1\/sites\/([^/]+)\/feedback$/);
     if (match && request.method === "GET") {
       const siteId = decodeURIComponent(match[1] || "");
@@ -315,6 +395,19 @@ var src_default = {
       const down = windowItems.filter((f) => f.rating === "down").length;
       return json({ total, lastN: { days, up, down, total: up + down } }, {}, allow);
     }
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/stats$/);
+      if (m && request.method === "GET") {
+        const siteId = decodeURIComponent(m[1] || "");
+        const { origin: reqOrigin } = cors(request);
+        const allow = corsForSite(siteId, reqOrigin || void 0) || reqOrigin || "*";
+        const days = Math.max(1, Math.min(90, parseInt(url.searchParams.get("days") || "7", 10)));
+        const stats = await computeSiteStats(env, siteId, days);
+        if (!stats)
+          return notFound(allow);
+        return json(stats, {}, allow);
+      }
+    }
     return notFound(origin || "*");
   }
 };
@@ -333,6 +426,86 @@ async function getSite(env, siteId) {
   return SITES[siteId];
 }
 __name(getSite, "getSite");
+async function getSiteFull(env, siteId) {
+  if (env.DB) {
+    try {
+      const row = await env.DB.prepare("SELECT id, name, owner_email, cors_json, created_at, verified_at FROM sites WHERE id = ?").bind(siteId).first();
+      if (row)
+        return {
+          id: row.id,
+          name: row.name,
+          owner_email: row.owner_email ?? null,
+          cors: row.cors_json ? JSON.parse(row.cors_json) : [],
+          created_at: row.created_at,
+          verified_at: row.verified_at ?? null
+        };
+    } catch {
+    }
+  }
+  const m = SITES[siteId];
+  if (!m)
+    return void 0;
+  return { id: siteId, name: m.name, owner_email: null, cors: m.cors || [], created_at: void 0, verified_at: null };
+}
+__name(getSiteFull, "getSiteFull");
+async function upsertSite(env, data) {
+  if (env.DB) {
+    const cors_json = JSON.stringify(data.cors || []);
+    await env.DB.prepare(
+      `INSERT INTO sites (id, name, owner_email, cors_json, created_at, verify_token)
+         VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, owner_email=excluded.owner_email, cors_json=excluded.cors_json`
+    ).bind(data.id, data.name, data.owner_email || null, cors_json, data.verify_token || null).run();
+    return;
+  }
+  SITES[data.id] = { name: data.name, cors: data.cors };
+}
+__name(upsertSite, "upsertSite");
+async function updateSiteCors(env, siteId, cors2) {
+  if (env.DB) {
+    await env.DB.prepare("UPDATE sites SET cors_json = ? WHERE id = ?").bind(JSON.stringify(cors2 || []), siteId).run();
+    return;
+  }
+  if (SITES[siteId])
+    SITES[siteId].cors = cors2;
+}
+__name(updateSiteCors, "updateSiteCors");
+async function listSites(env, ownerEmail) {
+  if (env.DB) {
+    try {
+      const where = ownerEmail ? "WHERE s.owner_email = ?" : "";
+      const sql = `SELECT s.id, s.name, s.owner_email, s.cors_json, s.created_at, s.verified_at,
+                          (SELECT COUNT(*) FROM feedback f WHERE f.site_id = s.id) AS feedback_count
+                   FROM sites s ${where}
+                   ORDER BY datetime(s.created_at) DESC`;
+      const stmt = env.DB.prepare(sql);
+      const res = ownerEmail ? await stmt.bind(ownerEmail).all() : await stmt.all();
+      const rows = res.results || [];
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        owner_email: r.owner_email ?? null,
+        cors: r.cors_json ? JSON.parse(r.cors_json) : [],
+        created_at: r.created_at,
+        verified_at: r.verified_at ?? null,
+        feedback_count: Number(r.feedback_count || 0)
+      }));
+    } catch {
+    }
+  }
+  const entries = Object.entries(SITES);
+  const filtered = ownerEmail ? [] : entries;
+  return filtered.map(([id, m]) => ({
+    id,
+    name: m.name,
+    owner_email: null,
+    cors: m.cors || [],
+    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+    verified_at: null,
+    feedback_count: MEM.feedback.filter((f) => f.site_id === id).length
+  }));
+}
+__name(listSites, "listSites");
 async function storeFeedback(env, row) {
   if (env.DB) {
     try {
@@ -435,6 +608,73 @@ async function postSlack(webhook, env, row, policy) {
   });
 }
 __name(postSlack, "postSlack");
+async function computeSiteStats(env, siteId, days) {
+  const now = Date.now();
+  const winMs = days * 24 * 60 * 60 * 1e3;
+  const sinceIso = new Date(now - winMs).toISOString();
+  const prevSinceIso = new Date(now - 2 * winMs).toISOString();
+  if (env.DB) {
+    try {
+      const totalRow = await env.DB.prepare("SELECT COUNT(*) AS c, SUM(CASE WHEN rating='up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN rating='down' THEN 1 ELSE 0 END) AS down FROM feedback WHERE site_id = ?").bind(siteId).first();
+      const lastRow = await env.DB.prepare("SELECT SUM(CASE WHEN rating='up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN rating='down' THEN 1 ELSE 0 END) AS down FROM feedback WHERE site_id = ? AND datetime(created_at) >= datetime(?)").bind(siteId, sinceIso).first();
+      const prevRow = await env.DB.prepare("SELECT SUM(CASE WHEN rating='up' THEN 1 ELSE 0 END) AS up, SUM(CASE WHEN rating='down' THEN 1 ELSE 0 END) AS down FROM feedback WHERE site_id = ? AND datetime(created_at) < datetime(?) AND datetime(created_at) >= datetime(?)").bind(siteId, sinceIso, prevSinceIso).first();
+      const all2 = Number(totalRow?.c || 0);
+      const upAll2 = Number(totalRow?.up || 0);
+      const downAll2 = Number(totalRow?.down || 0);
+      const satAll2 = all2 > 0 ? upAll2 / (upAll2 + downAll2) * 100 : 0;
+      const lastUp2 = Number(lastRow?.up || 0);
+      const lastDown2 = Number(lastRow?.down || 0);
+      const lastTotal2 = lastUp2 + lastDown2;
+      const lastSat2 = lastTotal2 > 0 ? lastUp2 / lastTotal2 * 100 : 0;
+      const prevUp2 = Number(prevRow?.up || 0);
+      const prevDown2 = Number(prevRow?.down || 0);
+      const prevTotal2 = prevUp2 + prevDown2;
+      const prevSat2 = prevTotal2 > 0 ? prevUp2 / prevTotal2 * 100 : 0;
+      const totalPct2 = prevTotal2 > 0 ? (lastTotal2 - prevTotal2) / prevTotal2 * 100 : lastTotal2 > 0 ? 100 : 0;
+      const satPct2 = prevTotal2 > 0 ? lastSat2 - prevSat2 : lastSat2;
+      return {
+        totals: { all: all2, up: upAll2, down: downAll2, satisfactionPct: round2(satAll2) },
+        lastN: { days, up: lastUp2, down: lastDown2, total: lastTotal2, satisfactionPct: round2(lastSat2) },
+        prevN: { days, up: prevUp2, down: prevDown2, total: prevTotal2, satisfactionPct: round2(prevSat2) },
+        deltas: { totalPct: round2(totalPct2), satisfactionPct: round2(satPct2) }
+      };
+    } catch {
+    }
+  }
+  const allRows = MEM.feedback.filter((f) => f.site_id === siteId);
+  const all = allRows.length;
+  const upAll = allRows.filter((f) => f.rating === "up").length;
+  const downAll = allRows.filter((f) => f.rating === "down").length;
+  const satAll = all > 0 ? upAll / (upAll + downAll) * 100 : 0;
+  const since = now - winMs;
+  const prevSince = now - 2 * winMs;
+  const lastRows = allRows.filter((f) => new Date(f.created_at).getTime() >= since);
+  const prevRows = allRows.filter((f) => {
+    const t = new Date(f.created_at).getTime();
+    return t < since && t >= prevSince;
+  });
+  const lastUp = lastRows.filter((f) => f.rating === "up").length;
+  const lastDown = lastRows.filter((f) => f.rating === "down").length;
+  const lastTotal = lastRows.length;
+  const lastSat = lastTotal > 0 ? lastUp / lastTotal * 100 : 0;
+  const prevUp = prevRows.filter((f) => f.rating === "up").length;
+  const prevDown = prevRows.filter((f) => f.rating === "down").length;
+  const prevTotal = prevRows.length;
+  const prevSat = prevTotal > 0 ? prevUp / prevTotal * 100 : 0;
+  const totalPct = prevTotal > 0 ? (lastTotal - prevTotal) / prevTotal * 100 : lastTotal > 0 ? 100 : 0;
+  const satPct = prevTotal > 0 ? lastSat - prevSat : lastSat;
+  return {
+    totals: { all, up: upAll, down: downAll, satisfactionPct: round2(satAll) },
+    lastN: { days, up: lastUp, down: lastDown, total: lastTotal, satisfactionPct: round2(lastSat) },
+    prevN: { days, up: prevUp, down: prevDown, total: prevTotal, satisfactionPct: round2(prevSat) },
+    deltas: { totalPct: round2(totalPct), satisfactionPct: round2(satPct) }
+  };
+}
+__name(computeSiteStats, "computeSiteStats");
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+__name(round2, "round2");
 
 // ../../node_modules/.pnpm/wrangler@3.114.14_@cloudflare+workers-types@4.20250924.0/node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts
 var drainBody = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx) => {
