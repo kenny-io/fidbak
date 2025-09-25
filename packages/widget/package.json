@@ -1,6 +1,6 @@
 {
   "name": "@fidbak/widget",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Framework-free feedback FAB + modal (UMD for CDN, ESM for npm)",
   "type": "module",
   "main": "dist/fidbak.fab.min.js",
@@ -38,12 +38,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/your-org/fidbak.git"
+    "url": "git+https://github.com/kenny-io/fidbak.git"
   },
   "bugs": {
-    "url": "https://github.com/your-org/fidbak/issues"
+    "url": "https://github.com/kenny-io/fidbak/issues"
   },
-  "homepage": "https://github.com/your-org/fidbak#readme",
+  "homepage": "https://fidbak-dash.pages.dev/",
   "publishConfig": {
     "access": "public"
   },
