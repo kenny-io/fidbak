@@ -4,7 +4,7 @@ Fidbak is a lightweight service for collecting user feedback (thumbs up/down wit
 
 - Base URL (production): `https://fidbak-api.primary-account-45e.workers.dev`
 - Content type: JSON request/response
-- Auth: Public endpoints; browser access is governed by CORS allowlists per Site ID
+- Auth: Owner-protected endpoints require a Clerk JWT (Bearer). Public endpoints are governed by per-site CORS.
 - Errors: Non-2xx responses return JSON `{ ok: false, error: string }`
 - Versioning: All endpoints are prefixed with `/v1`
 
@@ -67,7 +67,7 @@ curl "$API/v1/sites/acme-docs/stats?days=7"
 POST `/v1/sites`
 
 - Purpose: Self-serve site creation. Registers a Site ID, allowlists origins for CORS, and returns a verification token (reserved for future verification flows).
-- CORS: Open to any origin for onboarding, but the created site will only function from allowlisted origins.
+- Auth: Requires Bearer token (Clerk). The created site will only function from allowlisted origins.
 - Request body:
 ```json
 {
@@ -94,13 +94,12 @@ POST `/v1/sites`
   - 400/422 on invalid input: `{ "ok": false, "error": "invalid_site_id" | "invalid_origin" }`
   - 500 on server error: `{ "ok": false, "error": "create_failed" }`
 
-### List Sites (with optional owner filter)
+### List Sites (owner)
 
-GET `/v1/sites?ownerEmail=`
+GET `/v1/sites`
 
-- Purpose: Return a list of sites with metadata and an aggregated feedback count.
-- Query params:
-  - `ownerEmail` — string (optional). When provided, returns only sites with `owner_email` equal to this value. If your deployment runs without D1 (memory fallback), the filter will return an empty list since ownership is not tracked in memory.
+- Purpose: Return a list of sites for the authenticated owner with metadata and an aggregated feedback count.
+- Auth: Requires Bearer token (Clerk). Ownership is checked via `owner_user_id` (sub) or `owner_email`.
 - Response 200:
 ```json
 {
@@ -123,11 +122,12 @@ Example:
 curl "$API/v1/sites?ownerEmail=owner@acme.com"
 ```
 
-### Get Site Details
+### Get Site Details (owner)
 
 GET `/v1/sites/:id`
 
 - Purpose: Retrieve site metadata and current CORS allowlist.
+- Auth: Requires Bearer token (Clerk) and owner must match.
 - Path params:
   - `id` — Site ID
 - Response 200:
@@ -143,11 +143,12 @@ GET `/v1/sites/:id`
 ```
 - 404: `{ "ok": false, "error": "not_found" }`
 
-### Manage Site Origins (CORS)
+### Manage Site Origins (CORS, owner)
 
 POST `/v1/sites/:id/origins`
 
 - Purpose: Add or remove CORS-allowed origins for a Site ID.
+- Auth: Requires Bearer token (Clerk) and owner must match.
 - Path params:
   - `id` — Site ID
 - Request body:
@@ -190,9 +191,9 @@ POST `/v1/feedback`
   "meta": { "userAgent": "...", "referrer": "..." }
 }
 ```
-- Response 200:
+- Response 202 Accepted:
 ```json
-{ "ok": true, "id": "fb_123", "created_at": "2025-09-24T20:55:10.234Z" }
+{ "accepted": true, "id": "fb_123" }
 ```
 - Errors:
   - 400 invalid input
@@ -260,6 +261,70 @@ GET `/v1/sites/:id/summary?days=7`
 - CORS allowlisting per Site ID is the primary browser-side control. Only allowlisted origins can call feedback read/write endpoints successfully from the browser.
 - Consider adding Turnstile/Recaptcha or rate limits on `POST /v1/sites` to reduce onboarding abuse.
 - `verifyToken` is returned from `POST /v1/sites` and reserved for future verification flows (e.g., email verification) before enabling a site.
+
+---
+
+## Webhooks (owner)
+
+Fidbak supports per‑site webhooks. Configure them in the dashboard or via the endpoints below. We support Slack Incoming Webhooks and generic JSON endpoints.
+
+### List Webhooks
+
+GET `/v1/sites/:id/webhooks`
+
+- Auth: Bearer token; owner must match.
+- Response 200:
+```json
+{ "webhooks": [ { "id": "wh_1", "url": "https://...", "secret": null, "active": true, "created_at": "..." } ] }
+```
+
+### Create Webhook
+
+POST `/v1/sites/:id/webhooks`
+
+- Auth: Bearer token; owner must match.
+- Request:
+```json
+{ "url": "https://your-endpoint.example.com/webhooks/fidbak", "secret": "optional", "active": true }
+```
+- Response 201:
+```json
+{ "ok": true, "webhook": { "id": "wh_1", "url": "https://...", "secret": null, "active": true, "created_at": "..." } }
+```
+
+### Update Webhook
+
+POST `/v1/sites/:id/webhooks/:wid`
+
+- Auth: Bearer token; owner must match.
+- Request (any subset):
+```json
+{ "url": "https://new-url.example.com", "secret": "new-secret", "active": false }
+```
+- Response 200:
+```json
+{ "ok": true, "webhook": { "id": "wh_1", "url": "https://new-url.example.com", "secret": "new-secret", "active": false, "created_at": "..." } }
+```
+
+### Deactivate Webhook
+
+POST `/v1/sites/:id/webhooks/:wid/delete`
+
+- Auth: Bearer token; owner must match.
+- Soft-deactivates the webhook (sets `active=false`).
+- Response 200:
+```json
+{ "ok": true, "webhook": { "id": "wh_1" } }
+```
+
+### Delivery format
+
+- Slack Incoming Webhooks (URLs under `https://hooks.slack.com/`):
+  - Payload: `{ text, blocks }` (no signature header).
+- Generic endpoints (any other HTTPS URL):
+  - Payload: `{ "type": "fidbak.feedback.v1", "data": { /* feedback row */ } }`
+  - If a secret is set on the webhook, Fidbak includes `x-fidbak-signature: <hex>` where `<hex>` is `HMAC_SHA256(secret, rawBody)`.
+  - Verify by computing HMAC of the exact raw body string and comparing (case‑insensitive hex).
 
 ---
 

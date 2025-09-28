@@ -1,8 +1,64 @@
 export interface Env {
   DB?: D1Database; // optional binding
   FIDBAK_DASHBOARD_BASE?: string; // used in Slack footer link
-  FIDBAK_SLACK_WEBHOOK?: string; // fallback global webhook
-  FIDBAK_SLACK_CHANNEL?: string; // optional default channel
+  // Deprecated: global webhook removed; use per-site managed webhooks instead
+  FIDBAK_SLACK_WEBHOOK?: string; // no longer used
+  FIDBAK_SLACK_CHANNEL?: string; // no longer used
+  // Clerk config for JWT verification
+  CLERK_ISSUER?: string; // e.g. https://your-subdomain.clerk.accounts.dev
+  CLERK_JWKS_URL?: string; // e.g. https://your-subdomain.clerk.accounts.dev/.well-known/jwks.json
+  CLERK_AUDIENCE?: string; // optional audience check
+  // Default dashboard origin to auto-allowlist on site creation
+  FIDBAK_DASH_ORIGIN?: string; // e.g. https://fidbak-dash.pages.dev
+}
+
+// New: list sites by owner using sub (preferred) then email
+async function listSitesByOwner(
+  env: Env,
+  owner: { sub?: string; email?: string },
+): Promise<Array<{
+  id: string;
+  name?: string;
+  owner_email?: string | null;
+  owner_user_id?: string | null;
+  cors: string[];
+  created_at: string;
+  verified_at?: string | null;
+  feedback_count?: number;
+}>> {
+  const byEmail = async (email?: string) => listSites(env, email);
+  if (env.DB && owner.sub) {
+    try {
+      const sql = `SELECT s.id, s.name, s.owner_email, s.owner_user_id, s.cors_json, s.created_at, s.verified_at,
+                          (SELECT COUNT(*) FROM feedback f WHERE f.site_id = s.id) AS feedback_count
+                   FROM sites s WHERE s.owner_user_id = ?
+                   ORDER BY datetime(s.created_at) DESC`;
+      const res = await env.DB.prepare(sql).bind(owner.sub).all<{
+        id: string; name?: string; owner_email?: string | null; owner_user_id?: string | null; cors_json?: string; created_at: string; verified_at?: string | null; feedback_count?: number;
+      }>();
+      const rows = (res.results as any[]) || [];
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        owner_email: r.owner_email ?? null,
+        owner_user_id: r.owner_user_id ?? null,
+        cors: r.cors_json ? JSON.parse(r.cors_json) : [],
+        created_at: r.created_at,
+        verified_at: r.verified_at ?? null,
+        feedback_count: Number(r.feedback_count || 0),
+      }));
+    } catch {
+      // fall back to email if column missing
+    }
+  }
+  return byEmail(owner.email);
+}
+
+// Owner check preferring sub, fallback to email
+function isOwnerOfSite(site: any, user: AuthUser): boolean {
+  if (site && site.owner_user_id && user.sub && String(site.owner_user_id) === String(user.sub)) return true;
+  if (site && site.owner_email && user.email && String(site.owner_email).toLowerCase() === String(user.email).toLowerCase()) return true;
+  return false;
 }
 
 type FeedbackRow = {
@@ -115,6 +171,87 @@ function corsForSite(siteId: string | undefined, origin: string | undefined): st
   return site.cors.includes(origin) ? origin : undefined;
 }
 
+// ------------- Auth (Clerk JWT) -------------
+type AuthUser = { sub: string; email?: string };
+
+const JWKS_CACHE: Map<string, { fetchedAt: number; keys: JsonWebKey[] }> = new Map();
+
+function b64urlToUint8(s: string): Uint8Array {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = s.length % 4 ? 4 - (s.length % 4) : 0;
+  const base = s + '='.repeat(pad);
+  const bin = atob(base);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function fetchJwks(jwksUrl: string): Promise<JsonWebKey[]> {
+  const cached = JWKS_CACHE.get(jwksUrl);
+  const now = Date.now();
+  if (cached && now - cached.fetchedAt < 15 * 60 * 1000) return cached.keys;
+  const resp = await fetch(jwksUrl, { headers: { 'cache-control': 'no-cache' } });
+  if (!resp.ok) throw new Error('jwks_fetch_failed');
+  const data = await resp.json<{ keys: JsonWebKey[] }>();
+  JWKS_CACHE.set(jwksUrl, { fetchedAt: now, keys: data.keys || [] });
+  return data.keys || [];
+}
+
+async function verifyClerkJWT(env: Env, token: string): Promise<AuthUser | undefined> {
+  try {
+    const [h, p, s] = token.split('.');
+    if (!h || !p || !s) return undefined;
+    const header = JSON.parse(new TextDecoder().decode(b64urlToUint8(h)));
+    const payload = JSON.parse(new TextDecoder().decode(b64urlToUint8(p)));
+    const sig = b64urlToUint8(s);
+
+    const iss = env.CLERK_ISSUER || '';
+    const jwksUrl = env.CLERK_JWKS_URL || '';
+    const aud = env.CLERK_AUDIENCE;
+    if (!iss || !jwksUrl) return undefined;
+    if (payload.iss && !(String(payload.iss).startsWith(iss))) return undefined;
+    if (aud && payload.aud && payload.aud !== aud) return undefined;
+    if (typeof payload.exp === 'number' && Date.now() / 1000 > payload.exp) return undefined;
+
+    const keys = await fetchJwks(jwksUrl);
+    const key = keys.find((k: any) => !header.kid || k.kid === header.kid) || keys[0];
+    if (!key) return undefined;
+
+    const algo = (header.alg as string) || 'RS256';
+    if (!/^RS(256|384|512)$/.test(algo)) return undefined;
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'jwk',
+      key,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    const data = new TextEncoder().encode(`${h}.${p}`);
+    const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sig, data);
+    if (!ok) return undefined;
+    // Try multiple Clerk payload shapes for email
+    const email: string | undefined =
+      payload.email ||
+      payload['email_address'] ||
+      payload['primary_email_address'] ||
+      (Array.isArray(payload.email_addresses) && payload.email_addresses[0]?.email_address) ||
+      (payload.user && (payload.user.email || payload.user.email_address));
+    const sub: string | undefined = payload.sub;
+    if (!sub) return undefined;
+    return { sub, email };
+  } catch {
+    return undefined;
+  }
+}
+
+async function getAuth(env: Env, request: Request): Promise<AuthUser | undefined> {
+  const auth = request.headers.get('authorization') || request.headers.get('Authorization');
+  if (!auth || !auth.toLowerCase().startsWith('bearer ')) return undefined;
+  const token = auth.slice(7).trim();
+  return verifyClerkJWT(env, token);
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -124,7 +261,8 @@ export default {
       const h = new Headers({
         'access-control-allow-origin': origin || '*',
         'access-control-allow-methods': 'GET,POST,OPTIONS',
-        'access-control-allow-headers': 'content-type,x-fidbak-signature',
+        // Allow Authorization for authenticated dashboard requests
+        'access-control-allow-headers': 'content-type,authorization,x-fidbak-signature',
       });
       return new Response(null, { status: 204, headers: h });
     }
@@ -231,9 +369,11 @@ export default {
     // GET /v1/sites  (list sites)
     if (url.pathname === '/v1/sites' && request.method === 'GET') {
       const { origin: reqOrigin } = cors(request);
-      const ownerEmail = (url.searchParams.get('ownerEmail') || '').trim();
+      const ownerEmailQuery = (url.searchParams.get('ownerEmail') || '').trim();
+      const authUser = await getAuth(env, request).catch(() => undefined);
+      const ownerEmail = (authUser?.email || '').trim() || ownerEmailQuery;
       try {
-        const sites = await listSites(env, ownerEmail || undefined);
+        const sites = await listSitesByOwner(env, { sub: authUser?.sub, email: ownerEmail || undefined });
         return json({ sites }, {}, reqOrigin || '*');
       } catch (e) {
         return bad('list_failed', reqOrigin || '*');
@@ -243,23 +383,40 @@ export default {
     // POST /v1/sites  (self-serve create)
     if (url.pathname === '/v1/sites' && request.method === 'POST') {
       const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
       let body: any = {};
       try {
         body = await request.json();
       } catch {}
       const id = (body?.id || '').trim();
       const name = (body?.name || '').trim() || id;
-      const owner_email = (body?.ownerEmail || '').trim() || null;
+      // Fallback to client-provided ownerEmail only if token lacks email
+      const owner_email = ((authUser.email || body?.ownerEmail || '') as string).trim().toLowerCase();
+      // Require some owner email for now until we add owner_user_id storage
+      if (!owner_email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(owner_email)) {
+        return bad('owner_email_required', reqOrigin || '*');
+      }
       const originToAllow = (body?.origin || '').trim();
       const moreOrigins = Array.isArray(body?.origins) ? body.origins.filter((o: any) => typeof o === 'string' && /^https?:\/\//.test(o)).map((s: string) => s.trim()) : [];
       if (!id || !/^[a-z0-9-]{3,}$/.test(id)) return bad('invalid_site_id', reqOrigin || '*');
       if (!originToAllow || !/^https?:\/\//.test(originToAllow)) return bad('invalid_origin', reqOrigin || '*');
 
       const verify_token = crypto.randomUUID();
-      const set = new Set<string>([originToAllow, ...moreOrigins]);
+      const dashboardOrigin = env.FIDBAK_DASH_ORIGIN || 'https://fidbak-dash.pages.dev';
+      const set = new Set<string>([originToAllow, ...moreOrigins, dashboardOrigin]);
       const corsArr = Array.from(set);
       try {
-        await upsertSite(env, { id, name, owner_email, cors: corsArr, verify_token });
+        await upsertSite(env, { id, name, owner_email, owner_user_id: authUser.sub, cors: corsArr, verify_token });
+        // Optional initial webhook
+        if (body?.webhook && typeof body.webhook === 'object') {
+          const wu = String(body.webhook.url || '').trim();
+          const ws = typeof body.webhook.secret === 'string' ? body.webhook.secret : undefined;
+          const active = body.webhook.active !== false;
+          if (/^https?:\/\//.test(wu)) {
+            await createSiteWebhook(env, id, { url: wu, secret: ws, active });
+          }
+        }
         const dashboard = env.FIDBAK_DASHBOARD_BASE
           ? `${env.FIDBAK_DASHBOARD_BASE}/?siteId=${encodeURIComponent(id)}`
           : undefined;
@@ -279,6 +436,14 @@ export default {
       if (m && request.method === 'POST') {
         const { origin: reqOrigin } = cors(request);
         const siteId = decodeURIComponent(m[1] || '');
+        // Authorization: only owner can mutate origins
+        const authUser = await getAuth(env, request);
+        if (!authUser?.email) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const siteForAuth = await getSiteFull(env, siteId);
+        if (!siteForAuth) return notFound(reqOrigin || '*');
+        if (!isOwnerOfSite(siteForAuth, authUser)) {
+          return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        }
         let body: any = {};
         try {
           body = await request.json();
@@ -299,23 +464,33 @@ export default {
       }
     }
 
-    // GET /v1/sites/:id  (site details)
+    // GET /v1/sites/:id  (site details) - require owner auth
     {
       const m = url.pathname.match(/^\/v1\/sites\/([^/]+)$/);
       if (m && request.method === 'GET') {
         const siteId = decodeURIComponent(m[1] || '');
         const { origin: reqOrigin } = cors(request);
+        const authUser = await getAuth(env, request);
+        if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
         const site = await getSiteFull(env, siteId);
         if (!site) return notFound(reqOrigin || '*');
+        const isOwner = isOwnerOfSite(site, authUser);
+        if (!isOwner) return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
         return json(site, {}, reqOrigin || '*');
       }
     }
 
-    // GET /v1/sites/:id/feedback
+    // GET /v1/sites/:id/feedback (owner-only)
     const match = url.pathname.match(/^\/v1\/sites\/([^/]+)\/feedback$/);
     if (match && request.method === 'GET') {
       const siteId = decodeURIComponent(match[1] || '');
-      const allow = corsForSite(siteId, origin || undefined) || origin || '*';
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      const siteForAuth = await getSiteFull(env, siteId);
+      if (!siteForAuth) return notFound(reqOrigin || '*');
+      if (!isOwnerOfSite(siteForAuth, authUser)) return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      const allow = reqOrigin || '*';
       const rating = url.searchParams.get('rating') as 'up' | 'down' | null;
       const q = url.searchParams.get('q');
       const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10)));
@@ -366,11 +541,17 @@ export default {
       return json({ items, total, nextOffset: Math.min(total, offset + items.length) }, {}, allow);
     }
 
-    // GET /v1/sites/:id/summary?days=7
+    // GET /v1/sites/:id/summary?days=7 (owner-only)
     const matchSummary = url.pathname.match(/^\/v1\/sites\/([^/]+)\/summary$/);
     if (matchSummary && request.method === 'GET') {
       const siteId = decodeURIComponent(matchSummary[1] || '');
-      const allow = corsForSite(siteId, origin || undefined) || origin || '*';
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      const siteForAuth = await getSiteFull(env, siteId);
+      if (!siteForAuth) return notFound(reqOrigin || '*');
+      if (!isOwnerOfSite(siteForAuth, authUser)) return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      const allow = reqOrigin || '*';
       const days = Math.max(1, Math.min(90, parseInt(url.searchParams.get('days') || '7', 10)));
       const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
@@ -400,17 +581,107 @@ export default {
       return json({ total, lastN: { days, up, down, total: up + down } }, {}, allow);
     }
 
-    // GET /v1/sites/:id/stats?days=7
+    // GET /v1/sites/:id/stats?days=7 (owner-only)
     {
       const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/stats$/);
       if (m && request.method === 'GET') {
         const siteId = decodeURIComponent(m[1] || '');
         const { origin: reqOrigin } = cors(request);
-        const allow = corsForSite(siteId, reqOrigin || undefined) || reqOrigin || '*';
+        const authUser = await getAuth(env, request);
+        if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const siteForAuth = await getSiteFull(env, siteId);
+        if (!siteForAuth) return notFound(reqOrigin || '*');
+        if (!isOwnerOfSite(siteForAuth, authUser)) return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const allow = reqOrigin || '*';
         const days = Math.max(1, Math.min(90, parseInt(url.searchParams.get('days') || '7', 10)));
         const stats = await computeSiteStats(env, siteId, days);
         if (!stats) return notFound(allow);
         return json(stats, {}, allow);
+      }
+    }
+
+    // Webhook management endpoints (owner-only)
+    // GET /v1/sites/:id/webhooks
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/webhooks$/);
+      if (m && request.method === 'GET') {
+        const siteId = decodeURIComponent(m[1] || '');
+        const { origin: reqOrigin } = cors(request);
+        const authUser = await getAuth(env, request);
+        if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const site = await getSiteFull(env, siteId);
+        if (!site) return notFound(reqOrigin || '*');
+        if (!isOwnerOfSite(site, authUser)) return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const hooks = await listSiteWebhooks(env, siteId);
+        return json({ webhooks: hooks }, {}, reqOrigin || '*');
+      }
+    }
+
+    // POST /v1/sites/:id/webhooks (create)
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/webhooks$/);
+      if (m && request.method === 'POST') {
+        const siteId = decodeURIComponent(m[1] || '');
+        const { origin: reqOrigin } = cors(request);
+        const authUser = await getAuth(env, request);
+        if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const site = await getSiteFull(env, siteId);
+        if (!site) return notFound(reqOrigin || '*');
+        if (!isOwnerOfSite(site, authUser)) return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        let body: any = {};
+        try { body = await request.json(); } catch {}
+        const urlStr = String(body?.url || '').trim();
+        const secret = typeof body?.secret === 'string' ? body.secret : undefined;
+        const active = body?.active !== false;
+        if (!/^https?:\/\//.test(urlStr)) return bad('invalid_url', reqOrigin || '*');
+        const hook = await createSiteWebhook(env, siteId, { url: urlStr, secret, active });
+        return json({ ok: true, webhook: hook }, { status: 201 }, reqOrigin || '*');
+      }
+    }
+
+    // POST /v1/sites/:id/webhooks/:wid (update)
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/webhooks\/([^/]+)$/);
+      if (m && request.method === 'POST') {
+        const siteId = decodeURIComponent(m[1] || '');
+        const wid = decodeURIComponent(m[2] || '');
+        const { origin: reqOrigin } = cors(request);
+        const authUser = await getAuth(env, request);
+        if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const site = await getSiteFull(env, siteId);
+        if (!site) return notFound(reqOrigin || '*');
+        if (!isOwnerOfSite(site, authUser)) return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        let body: any = {};
+        try { body = await request.json(); } catch {}
+        const patch: any = {};
+        if (typeof body.url === 'string') {
+          const u = body.url.trim();
+          if (!/^https?:\/\//.test(u)) return bad('invalid_url', reqOrigin || '*');
+          patch.url = u;
+        }
+        if (typeof body.secret === 'string') patch.secret = body.secret;
+        if (typeof body.active === 'boolean') patch.active = body.active;
+        const updated = await updateSiteWebhook(env, siteId, wid, patch);
+        if (!updated) return notFound(reqOrigin || '*');
+        return json({ ok: true, webhook: updated }, {}, reqOrigin || '*');
+      }
+    }
+
+    // POST /v1/sites/:id/webhooks/:wid/delete (soft delete -> deactivate)
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/webhooks\/([^/]+)\/delete$/);
+      if (m && request.method === 'POST') {
+        const siteId = decodeURIComponent(m[1] || '');
+        const wid = decodeURIComponent(m[2] || '');
+        const { origin: reqOrigin } = cors(request);
+        const authUser = await getAuth(env, request);
+        if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const site = await getSiteFull(env, siteId);
+        if (!site) return notFound(reqOrigin || '*');
+        if (!isOwnerOfSite(site, authUser)) return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const updated = await updateSiteWebhook(env, siteId, wid, { active: false });
+        if (!updated) return notFound(reqOrigin || '*');
+        return json({ ok: true, webhook: updated }, {}, reqOrigin || '*');
       }
     }
 
@@ -438,9 +709,35 @@ async function getSiteFull(
   env: Env,
   siteId: string,
 ): Promise<
-  { id: string; name: string; owner_email?: string | null; cors: string[]; created_at?: string; verified_at?: string | null } | undefined
+  { id: string; name: string; owner_email?: string | null; owner_user_id?: string | null; cors: string[]; created_at?: string; verified_at?: string | null } | undefined
 > {
   if (env.DB) {
+    try {
+      // Try with owner_user_id (new column)
+      const row = await env.DB
+        .prepare('SELECT id, name, owner_email, owner_user_id, cors_json, created_at, verified_at FROM sites WHERE id = ?')
+        .bind(siteId)
+        .first<{
+          id: string;
+          name: string;
+          owner_email?: string | null;
+          owner_user_id?: string | null;
+          cors_json?: string;
+          created_at?: string;
+          verified_at?: string | null;
+        }>();
+      if (row)
+        return {
+          id: row.id,
+          name: row.name,
+          owner_email: row.owner_email ?? null,
+          owner_user_id: row.owner_user_id ?? null,
+          cors: row.cors_json ? JSON.parse(row.cors_json) : [],
+          created_at: row.created_at,
+          verified_at: row.verified_at ?? null,
+        };
+    } catch {}
+    // Fallback query if column doesn't exist
     try {
       const row = await env.DB
         .prepare('SELECT id, name, owner_email, cors_json, created_at, verified_at FROM sites WHERE id = ?')
@@ -458,6 +755,7 @@ async function getSiteFull(
           id: row.id,
           name: row.name,
           owner_email: row.owner_email ?? null,
+          owner_user_id: null,
           cors: row.cors_json ? JSON.parse(row.cors_json) : [],
           created_at: row.created_at,
           verified_at: row.verified_at ?? null,
@@ -466,23 +764,35 @@ async function getSiteFull(
   }
   const m = SITES[siteId];
   if (!m) return undefined;
-  return { id: siteId, name: m.name, owner_email: null, cors: m.cors || [], created_at: undefined, verified_at: null };
+  return { id: siteId, name: m.name, owner_email: null, owner_user_id: null, cors: m.cors || [], created_at: undefined, verified_at: null };
 }
 
 async function upsertSite(
   env: Env,
-  data: { id: string; name: string; owner_email?: string | null; cors: string[]; verify_token?: string },
+  data: { id: string; name: string; owner_email?: string | null; owner_user_id?: string | null; cors: string[]; verify_token?: string },
 ) {
   if (env.DB) {
     const cors_json = JSON.stringify(data.cors || []);
-    await env.DB
-      .prepare(
-        `INSERT INTO sites (id, name, owner_email, cors_json, created_at, verify_token)
-         VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?)
-         ON CONFLICT(id) DO UPDATE SET name=excluded.name, owner_email=excluded.owner_email, cors_json=excluded.cors_json`,
-      )
-      .bind(data.id, data.name, data.owner_email || null, cors_json, data.verify_token || null)
-      .run();
+    // Try including owner_user_id (new column). Fallback to legacy insert on error.
+    try {
+      await env.DB
+        .prepare(
+          `INSERT INTO sites (id, name, owner_email, owner_user_id, cors_json, created_at, verify_token)
+           VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?)
+           ON CONFLICT(id) DO UPDATE SET name=excluded.name, owner_email=excluded.owner_email, owner_user_id=excluded.owner_user_id, cors_json=excluded.cors_json`,
+        )
+        .bind(data.id, data.name, data.owner_email || null, data.owner_user_id || null, cors_json, data.verify_token || null)
+        .run();
+    } catch {
+      await env.DB
+        .prepare(
+          `INSERT INTO sites (id, name, owner_email, cors_json, created_at, verify_token)
+           VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?)
+           ON CONFLICT(id) DO UPDATE SET name=excluded.name, owner_email=excluded.owner_email, cors_json=excluded.cors_json`,
+        )
+        .bind(data.id, data.name, data.owner_email || null, cors_json, data.verify_token || null)
+        .run();
+    }
     return;
   }
   // memory fallback
@@ -598,29 +908,45 @@ async function fanout(
   webhookSecret?: string,
   policy?: any,
 ) {
-  const all: string[] = [];
-  if (Array.isArray(destinations)) all.push(...destinations);
-  if (env.FIDBAK_SLACK_WEBHOOK) all.push(env.FIDBAK_SLACK_WEBHOOK);
+  const all: string[] = Array.isArray(destinations) ? [...destinations] : [];
+  // Load site-managed webhooks
+  try {
+    const hooks = await listSiteWebhooks(env, row.site_id);
+    for (const h of hooks) {
+      if (h.active && /^https?:\/\//.test(h.url)) all.push(h.url);
+    }
+  } catch {}
 
   await Promise.all(
     all.map(async (url) => {
       // basic redaction for logs
       const redacted = url.replace(/(https:\/\/hooks\.slack\.com\/services\/)[^/]+\/[^/]+\/.+/, '$1***');
       try {
-        if (/hooks\.slack\.com\/services\//.test(url)) {
-          console.log('fidbak: posting to Slack', redacted);
-          await postSlack(url, env, row, policy);
+        const isSlack = /^https:\/\/hooks\.slack\.com\//.test(url);
+        let bodyStr = '';
+        const headers: Record<string, string> = { 'content-type': 'application/json' };
+
+        if (isSlack) {
+          // Slack expects { text?, blocks? } and rejects unknown top-level fields
+          const blocks = makeSlackBlocks(env, row);
+          bodyStr = JSON.stringify({ text: row.comment || `${row.rating.toUpperCase()} feedback on ${row.page_id}`, blocks });
+          // Do not attach HMAC header for Slack
         } else {
-          const body = JSON.stringify({ type: 'fidbak.feedback.v1', data: row });
-          const headers: Record<string, string> = { 'content-type': 'application/json' };
-          if (webhookSecret) {
-            headers['x-fidbak-signature'] = await hmacSHA256Hex(webhookSecret, body);
-          }
-          const resp = await fetch(url, { method: 'POST', headers, body });
-          if (!resp.ok) {
-            console.warn('fidbak: webhook non-2xx', redacted, resp.status);
-            try { console.warn('fidbak: webhook resp', await resp.text()); } catch {}
-          }
+          // Generic JSON webhook
+          bodyStr = JSON.stringify({ type: 'fidbak.feedback.v1', data: row });
+          // Prefer per-site stored secret when present
+          let secretToUse: string | undefined = webhookSecret;
+          try {
+            const hook = await getSiteWebhookByUrl(env, row.site_id, url);
+            if (hook?.secret) secretToUse = hook.secret;
+          } catch {}
+          if (secretToUse) headers['x-fidbak-signature'] = await hmacSHA256Hex(secretToUse, bodyStr);
+        }
+
+        const resp = await fetch(url, { method: 'POST', headers, body: bodyStr });
+        if (!resp.ok) {
+          console.warn('fidbak: webhook non-2xx', redacted, resp.status);
+          try { console.warn('fidbak: webhook resp', await resp.text()); } catch {}
         }
       } catch (e) {
         console.warn('fidbak: webhook error', redacted, (e as any)?.message || e);
@@ -652,24 +978,69 @@ function makeSlackBlocks(env: Env, row: FeedbackRow) {
 }
 
 async function postSlack(webhook: string, env: Env, row: FeedbackRow, policy?: any) {
-  const blocks = makeSlackBlocks(env, row);
-  const text = `${row.rating === 'up' ? '👍' : '👎'} Feedback on ${row.page_id}${row.comment ? `: ${row.comment}` : ''}`;
-  const payload: any = { text, blocks, username: 'fidbak', icon_emoji: ':speech_balloon:' };
-  const channel = policy?.slackChannel || env.FIDBAK_SLACK_CHANNEL;
-  if (channel) payload.channel = channel;
-  await fetch(webhook, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).then(async (r) => {
-    const body = await r.text().catch(() => '');
-    console.log('fidbak: slack response', r.status, body);
-    if (!r.ok) {
-      console.warn('fidbak: slack webhook non-2xx', r.status);
-    }
-  }).catch((e) => {
-    console.warn('fidbak: slack webhook error', e?.message || e);
-  });
+  // Deprecated: Slack-specific helper retained for backward compatibility only.
+  // No-op; use generic JSON webhooks per site instead.
+}
+
+// ---------- site webhook storage ----------
+type SiteWebhook = { id: string; site_id: string; url: string; secret?: string | null; active: number; created_at: string };
+
+async function listSiteWebhooks(env: Env, siteId: string): Promise<Array<{ id: string; url: string; secret?: string | null; active: boolean; created_at: string }>> {
+  if (!env.DB) return [];
+  try {
+    const res = await env.DB
+      .prepare('SELECT id, site_id, url, secret, active, created_at FROM site_webhooks WHERE site_id = ? ORDER BY datetime(created_at) DESC')
+      .bind(siteId)
+      .all<SiteWebhook>();
+    const rows = (res.results as any[]) || [];
+    return rows.map((r) => ({ id: r.id, url: r.url, secret: r.secret ?? null, active: Number(r.active) === 1, created_at: r.created_at }));
+  } catch {
+    return [];
+  }
+}
+
+async function getSiteWebhookByUrl(env: Env, siteId: string, url: string): Promise<{ id: string; url: string; secret?: string | null; active: boolean } | undefined> {
+  if (!env.DB) return undefined;
+  try {
+    const row = await env.DB
+      .prepare('SELECT id, url, secret, active FROM site_webhooks WHERE site_id = ? AND url = ? LIMIT 1')
+      .bind(siteId, url)
+      .first<{ id: string; url: string; secret?: string | null; active: number }>();
+    if (!row) return undefined;
+    return { id: row.id, url: row.url, secret: row.secret ?? null, active: Number(row.active) === 1 };
+  } catch {
+    return undefined;
+  }
+}
+
+async function createSiteWebhook(env: Env, siteId: string, data: { url: string; secret?: string; active?: boolean }) {
+  if (!env.DB) return { id: crypto.randomUUID(), url: data.url, secret: data.secret ?? null, active: !!data.active, created_at: new Date().toISOString() };
+  const id = crypto.randomUUID();
+  const active = data.active !== false;
+  await env.DB
+    .prepare('INSERT INTO site_webhooks (id, site_id, url, secret, active, created_at) VALUES (?, ?, ?, ?, ?, strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\'))')
+    .bind(id, siteId, data.url, data.secret || null, active ? 1 : 0)
+    .run();
+  return { id, url: data.url, secret: data.secret ?? null, active, created_at: new Date().toISOString() };
+}
+
+async function updateSiteWebhook(env: Env, siteId: string, id: string, patch: { url?: string; secret?: string; active?: boolean }) {
+  if (!env.DB) return { id, url: patch.url || '', secret: patch.secret ?? null, active: !!patch.active, created_at: new Date().toISOString() };
+  // Build dynamic update
+  const sets: string[] = [];
+  const binds: any[] = [];
+  if (typeof patch.url === 'string') { sets.push('url = ?'); binds.push(patch.url); }
+  if (typeof patch.secret === 'string') { sets.push('secret = ?'); binds.push(patch.secret); }
+  if (typeof patch.active === 'boolean') { sets.push('active = ?'); binds.push(patch.active ? 1 : 0); }
+  if (sets.length === 0) return undefined;
+  binds.push(siteId, id);
+  const sql = `UPDATE site_webhooks SET ${sets.join(', ')} WHERE site_id = ? AND id = ?`;
+  const res = await env.DB.prepare(sql).bind(...binds).run();
+  if ((res as any)?.success === false) return undefined;
+  // Return updated
+  const row = await env.DB.prepare('SELECT id, url, secret, active, created_at FROM site_webhooks WHERE site_id = ? AND id = ?').bind(siteId, id).first<{ id: string; url: string; secret?: string | null; active: number; created_at: string }>();
+  if (!row) return undefined;
+  return { id: row.id, url: row.url, secret: row.secret ?? null, active: Number(row.active) === 1, created_at: row.created_at };
 }
 
 // ---------- analytics helpers ----------

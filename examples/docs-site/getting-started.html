@@ -19,67 +19,44 @@
       <nav>
         <a href="/">Home</a>
         <a href="/getting-started.html">Getting Started</a>
-        <a href="/api.html">API</a>
       </nav>
     </header>
     <main>
       <div class="content">
         <h1>Getting Started</h1>
-        <p>Install the widget from npm and initialize it with your Site ID.</p>
+        <p>Create a site in the Dashboard, then embed the widget with your Site ID.</p>
         <h2>Install</h2>
-        <pre><code>npm i @fidbak/widget
-# or
-pnpm add @fidbak/widget</code></pre>
+        <pre><code>&lt;script src="https://unpkg.com/fidbak@latest/dist/fidbak.min.js"&gt;&lt;/script&gt;</code></pre>
         <h2>Usage</h2>
-        <pre><code>import fidbak from '@fidbak/widget';
-
-fidbak('init', {
-  siteId: 'YOUR_SITE_ID',
-  theme: 'auto',
-  position: 'br',
-  draggable: true,
-  includeQuery: false,
-  captureSelection: true,
-  apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
-  webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ'],
-  policy: {
-    corsAllow: [
-      'https://your-docs.example.com',
-      'https://dashboard.yourdomain.com'
-    ],
-    slackChannel: '#feedback' // optional override
-  },
-  debounceMs: 30000,
-});</code></pre>
+        <pre><code>&lt;script src="https://unpkg.com/fidbak@latest/dist/fidbak.min.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  Fidbak.init({
+    siteId: 'YOUR_SITE_ID',
+    theme: 'auto',
+    position: 'br',
+    includeQuery: false,
+    captureSelection: true
+    // apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev' // optional for custom env
+  });
+&lt;/script&gt;</code></pre>
         <h2>Next Steps</h2>
         <p>Try leaving feedback with the floating button. The nearest heading and selected text will be captured.</p>
       </div>
     </main>
     <footer>Example © 2025</footer>
-    <script type="module">
-      import fidbak from '@fidbak/widget';
-      fidbak('init', {
+    <script>
+      Fidbak.init({
         siteId: 'demo-site',
         theme: 'light',
         position: 'br',
-        draggable: true,
         includeQuery: false,
         captureSelection: true,
-        apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
-        webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ'],
-        policy: {
-          corsAllow: [
-            'https://your-docs.example.com',
-            'https://dashboard.yourdomain.com'
-          ],
-          slackChannel: '#docs-feedback' // optional override
-        },
+        // apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
         debounceMs: 30000,
         themeOverrides: {
           fontFamily: 'Inter, system-ui, sans-serif',
           radius: { card: 20, input: 16, button: 24, thumb: 24, close: 24 },
           colors: {
-            primaryStart: '#22c55e',
             primaryEnd:   '#16a34a',
             primaryText:  '#fff',
             borderLight:  '#e5e7eb',

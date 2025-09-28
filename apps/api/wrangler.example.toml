@@ -1,0 +1,45 @@
+name = "fidbak-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-01"
+
+# D1 database binding (fill with your database details)
+[[d1_databases]]
+binding = "DB"
+database_name = "<YOUR_DB_NAME>"
+database_id = "<REDACTED_DB_ID>"
+
+[observability]
+enabled = true
+
+# IMPORTANT:
+# Keep real secrets in Cloudflare Dashboard Vars or Wrangler Secrets.
+# Do NOT commit sensitive values here.
+
+# Production environment (uses dashboard-managed vars)
+[env.production.vars]
+CLERK_ISSUER = "<REDACTED_ISSUER>"
+CLERK_JWKS_URL = "<REDACTED_JWKS_URL>"
+# CLERK_AUDIENCE = "<OPTIONAL_AUDIENCE>"
+FIDBAK_DASH_ORIGIN = "https://your-dashboard.example.com"
+FIDBAK_DASHBOARD_BASE = "https://your-dashboard.example.com"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "<YOUR_DB_NAME>"
+database_id = "<REDACTED_DB_ID>"
+
+# Local environment (for dev)
+[env.local]
+name = "fidbak-api-local"  # deploy with: wrangler deploy --env local
+
+[env.local.vars]
+CLERK_ISSUER = "<REDACTED_ISSUER>"
+CLERK_JWKS_URL = "<REDACTED_JWKS_URL>"
+# CLERK_AUDIENCE = "<OPTIONAL_AUDIENCE>"
+FIDBAK_DASH_ORIGIN = "http://localhost:8080"
+FIDBAK_DASHBOARD_BASE = "http://localhost:8080"
+
+[[env.local.d1_databases]]
+binding = "DB"
+database_name = "<YOUR_DB_NAME>"
+database_id = "<REDACTED_DB_ID>"

@@ -6,3 +6,7 @@ coverage
 .playwright
 .vscode
 .idea
+
+# API local configs
+apps/api/wrangler.toml
+apps/api/.dev.vars

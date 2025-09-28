@@ -20,19 +20,18 @@
       <h2>Section A</h2>
       <p>Select some text here and then click the FAB.</p>
     </div>
-    <!-- Use the published UMD from the CDN -->
-    <script src="https://unpkg.com/@fidbak/widget@0.1.2/dist/fidbak.fab.min.global.js"></script>
+    <!-- Use the published script from the CDN -->
+    <script src="https://unpkg.com/fidbak@latest/dist/fidbak.min.js"></script>
     <script>
-      // global is available as window.fidbak
-      window.fidbak('init', {
+      // global is available as window.Fidbak
+      Fidbak.init({
         siteId: 'demo-site',
         theme: 'auto',
         position: 'bl',
         draggable: true,
         includeQuery: false,
         captureSelection: true,
-        apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
-        webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ'],
+        // apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev', // optional
         debounceMs: 0,
         themeOverrides: {
           fontFamily: 'Inter, system-ui, sans-serif',

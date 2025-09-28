@@ -1,54 +1,46 @@
-# @fidbak/widget
+# fidbak (Widget)
 
 Lightweight feedback FAB + modal. Framework‑free, zero dependencies.
 
-• ESM for npm import
-• UMD for CDN `<script>`
+## CDN usage (recommended)
 
-## Install
-
-```bash
-npm i @fidbak/widget
-# or
-pnpm add @fidbak/widget
+```html
+<script src="https://unpkg.com/fidbak@latest/dist/fidbak.min.js"></script>
+<script>
+  Fidbak.init({
+    siteId: 'your-site-id',
+    theme: 'auto',
+    position: 'br'
+  });
+  // Later: Fidbak.render() (planned) to re-render programmatically
+</script>
 ```
 
-## Usage (ESM)
+## ESM usage
 
 ```html
 <script type="module">
-  import fidbak from '@fidbak/widget';
-  fidbak('init', {
-    siteId: 'demo-site',
-    apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
+  import Fidbak from 'fidbak';
+  Fidbak.init({
+    siteId: 'your-site-id',
     theme: 'auto',
-    webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ']
-  });
-  // Later: window.fidbak('open') to open programmatically
-</script>
-```
-
-## Usage (CDN)
-
-```html
-<script src="https://unpkg.com/@fidbak/widget@0.1.2/dist/fidbak.fab.min.global.js"></script>
-<script>
-  window.fidbak('init', {
-    siteId: 'demo-site',
-    apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
-    theme: 'auto',
-    webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ']
+    position: 'br'
+    // Optional: apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev'
   });
 </script>
 ```
 
-## Options (common)
+## Options
 
-- `siteId` string – your site identifier.
-- `apiBaseUrl` string – Fidbak API base URL.
+- `siteId` string – your site identifier (create via dashboard).
+- `apiBaseUrl` string – Fidbak API base URL (omit for production default; set when testing against custom envs).
 - `theme` 'light' | 'dark' | 'auto' (default 'auto').
-- `debounceMs` number (optional, default 600000) – reduce duplicate sends.
-- `debug` boolean (optional) – or set `localStorage['fidbak:debug']='1'`.
+- `debounceMs` number (default 600000) – reduce duplicate sends.
+- `debug` boolean – or set `localStorage['fidbak:debug']='1'`.
+
+## Webhooks
+
+Configure webhooks per site in the dashboard. We support Slack Incoming Webhooks and generic JSON endpoints. Generic endpoints receive `{ type: 'fidbak.feedback.v1', data: {...} }` and may include `x-fidbak-signature` (HMAC‑SHA256 of raw body) if you set a secret.
 
 ## License
 

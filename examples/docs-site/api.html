@@ -26,11 +26,10 @@
       <div class="content">
         <h1>API</h1>
         <h2 id="init">init</h2>
-        <pre><code>fidbak('init', {
+        <pre><code>Fidbak.init({
   siteId: 'SITE_ID',
   theme: 'auto',
   position: 'br',
-  draggable: true,
   includeQuery: false,
   captureSelection: true
 });</code></pre>
@@ -39,24 +38,14 @@
       </div>
     </main>
     <footer>Example © 2025</footer>
-    <script type="module">
-      import fidbak from '@fidbak/widget';
-      fidbak('init', {
+    <script>
+      Fidbak.init({
         siteId: 'demo-site',
         theme: 'auto',
         position: 'br',
-        draggable: true,
         includeQuery: false,
         captureSelection: true,
-        apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
-        webhookUrl: ['https://hooks.slack.com/services/XXX/YYY/ZZZ'],
-        policy: {
-          corsAllow: [
-            'https://your-docs.example.com',
-            'https://dashboard.yourdomain.com'
-          ],
-          slackChannel: '#docs-feedback' // optional, override channel
-        },
+        // apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
         debounceMs: 30000,
         themeOverrides: {
           fontFamily: 'Inter, system-ui, sans-serif',
