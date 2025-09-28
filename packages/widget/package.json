@@ -15,8 +15,8 @@
       "default": "./dist/fidbak.fab.min.global.js"
     }
   },
-  "unpkg": "dist/fidbak.fab.min.global.js",
-  "jsdelivr": "dist/fidbak.fab.min.global.js",
+  "unpkg": "dist/fidbak.min.global.js",
+  "jsdelivr": "dist/fidbak.min.global.js",
   "files": [
     "dist",
     "README.md"

@@ -20,4 +20,14 @@ export default defineConfig([
     clean: false,
     target: 'es2018',
   },
+  {
+    entry: { 'fidbak.min': 'src/umd.ts' },
+    format: ['iife'],
+    globalName: 'Fidbak',
+    dts: false,
+    sourcemap: false,
+    minify: true,
+    clean: false,
+    target: 'es2018',
+  },
 ]);

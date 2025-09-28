@@ -2,7 +2,7 @@
 
 Fidbak is a lightweight widget and dashboard for collecting page‑level feedback (👍 / 👎 with optional comments). You embed a tiny script; submissions go to the Fidbak API; the dashboard visualizes analytics. Per‑site webhooks let you forward events to Slack or any custom endpoint.
 
-- CDN (latest): `https://unpkg.com/fidbak@latest/dist/fidbak.min.js`
+- CDN (latest): `https://unpkg.com/@fidbak/widget@latest/dist/fidbak.min.global.js`
 - API (production): `https://fidbak-api.primary-account-45e.workers.dev`
 
 ---
@@ -18,7 +18,7 @@ Fidbak is a lightweight widget and dashboard for collecting page‑level feedbac
 
 ### CDN (no build tools)
 ```html
-<script src="https://unpkg.com/fidbak@latest/dist/fidbak.min.js"></script>
+<script src="https://unpkg.com/@fidbak/widget@latest/dist/fidbak.min.global.js"></script>
 <script>
   Fidbak.init({
     siteId: 'your-site-id', // from dashboard

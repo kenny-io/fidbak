@@ -20,7 +20,7 @@ Lightweight feedback FAB + modal. Framework‑free, zero dependencies.
 
 ```html
 <script type="module">
-  import Fidbak from 'fidbak';
+  import Fidbak from '@fidbak/widget';
   Fidbak.init({
     siteId: 'your-site-id',
     theme: 'auto',
