@@ -7,7 +7,7 @@ Lightweight, framework‑free, feedback Widget with zero dependencies. Collect f
     * Return your `siteId`.
     * Let you add Allowed Origins (CORS).
     * Optionally add per‑site Webhooks (Slack or any URL).
-    * Copy the generated code snippet and paste it before </body> of your site:
+    * Copy the generated code snippet and paste it before `</body>` of your site:
 
 ## CDN usage (recommended)
 
