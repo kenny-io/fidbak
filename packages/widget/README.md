@@ -39,7 +39,6 @@ Lightweight, framework‑free, feedback Widget with zero dependencies. Collect f
 ## Options
 
 - `siteId` string – your site identifier (create via dashboard).
-- `apiBaseUrl` string – Fidbak API base URL (omit for production default; set when testing against custom envs).
 - `theme` 'light' | 'dark' | 'auto' (default 'auto').
 - `debounceMs` number (default 600000) – reduce duplicate sends.
 
@@ -47,7 +46,13 @@ Find more options in the [Fidbak docs](https://github.com/kenny-io/fidbak?tab=re
 
 ## Webhooks
 
-Configure webhooks per site in the dashboard. We support Slack Incoming Webhooks and generic JSON endpoints. Generic endpoints receive `{ type: 'fidbak.feedback.v1', data: {...} }` and may include `x-fidbak-signature` (HMAC‑SHA256 of raw body) if you set a secret.
+Configure webhooks per site in the dashboard. We support Slack Incoming Webhooks and generic JSON endpoints. Generic endpoints receive 
+
+```json 
+{ type: 'fidbak.feedback.v1', data: {...} }
+```
+
+and may include `x-fidbak-signature` (HMAC‑SHA256 of raw body) if you set a secret.
 
 # How to use with Next.js
 
@@ -83,7 +88,7 @@ export default function FidbakWidget() {
 
 ```
 
-Then and add it to your Next.js `src/app/layout.tsx`:
+Then and add it to your Next.js root layout file `src/app/layout.tsx`:
 
 ```tsx
 import FidbakWidget from '@/components/FidbakWidget'
