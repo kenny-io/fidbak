@@ -7,8 +7,7 @@ export interface InitOptions {
   position?: Position;
   draggable?: boolean;
   includeQuery?: boolean;
-  captureSelection?: boolean;
-  apiBaseUrl?: string; // defaults to same-origin
+  apiBaseUrl?: string; // Optional; defaults to production API; override for testing
   signSecret?: string; // optional client-side signing (dev only)
   webhookUrl?: string | string[]; // optional direct webhook fanout destinations
   webhookSecret?: string; // optional HMAC secret used to sign webhook body

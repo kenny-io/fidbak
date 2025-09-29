@@ -78,7 +78,7 @@ export default function FidbakWidget() {
           window.fidbak('init', {
             siteId: 'puma-docs',
             theme: 'auto',
-            position: 'br',
+            position: 'br'
           })
         }
       }}

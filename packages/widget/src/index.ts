@@ -1,5 +1,8 @@
 import type { FidbakAPI, InitOptions, RenderOptions, FeedbackPayload, ThemeOverrides } from './types';
 
+// Default production API base; can be overridden via options.apiBaseUrl
+const DEFAULT_API_BASE = 'https://fidbak-api.primary-account-45e.workers.dev';
+
 const STATE: {
   inited: boolean;
   options?: InitOptions;
@@ -389,6 +392,17 @@ function openModal(invoker?: HTMLElement) {
 }
 
 export function init(options: InitOptions) {
+  // Runtime validation for required apiBaseUrl
+  try {
+    // Auto default when not provided by consumer
+    const base = String((options as any)?.apiBaseUrl || DEFAULT_API_BASE).trim();
+    const u = new URL(base);
+    // Normalize: drop trailing slash
+    (options as any).apiBaseUrl = u.origin + (u.pathname.replace(/\/$/, '')) + (u.search || '') + (u.hash || '');
+  } catch {
+    console.error('[fidbak] init: apiBaseUrl must be an absolute URL, e.g. https://fidbak-api.example.com');
+    return; // do not initialize without a valid API base
+  }
   STATE.inited = true;
   STATE.options = options;
   dlog('init options', { ...options, webhookUrl: options.webhookUrl ? '[redacted]' : undefined });
@@ -687,7 +701,13 @@ async function sendFeedback(partial: {
   };
 
   const body = JSON.stringify(payload);
-  const base = options.apiBaseUrl || '';
+  // apiBaseUrl is validated in init(); normalize here as a safeguard
+  let base = String(options.apiBaseUrl || '').trim();
+  if (!/^https?:\/\//.test(base)) {
+    console.error('[fidbak] invalid apiBaseUrl; must be absolute http(s) URL');
+    return;
+  }
+  base = base.replace(/\/$/, '');
   const url = `${base}/v1/feedback`;
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (options.signSecret) {
@@ -695,9 +715,9 @@ async function sendFeedback(partial: {
   }
   try {
     // debug logs to help during local testing
-    console.log('fidbak: POST', url, payload);
+    dlog('POST', url, payload);
     const resp = await fetch(url, { method: 'POST', headers, body, keepalive: true });
-    console.log('fidbak: POST resp', resp.status);
+    dlog('POST resp', resp.status);
   } catch (e) {
     console.warn('fidbak: POST error', (e as any)?.message || e);
   }

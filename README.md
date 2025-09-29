@@ -22,8 +22,6 @@ Fidbak is a lightweight widget and dashboard for collecting page‑level feedbac
 <script>
   window.fidbak('init', {
     siteId: 'your-site-id', // from dashboard
-    // Optional: apiBaseUrl if different env, theme, etc.
-    // apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
     // theme: 'auto'
   });
 </script>
@@ -42,8 +40,7 @@ Call `Fidbak.init(options)` with the following fields.
   - Your unique site identifier. Create it via the dashboard or POST `/v1/sites`.
 
 ### Common
-- **apiBaseUrl** (string)
-  - Fidbak API base URL. Typically omit for production. If testing against another origin, set it explicitly.
+The widget auto-configures its API base URL; you don’t need to set `apiBaseUrl`.
 
 - **theme** (`'light' | 'dark' | 'auto'`, default `'auto'`)
   - Controls the widget theme. `'auto'` uses the user’s `prefers-color-scheme`.
@@ -157,7 +154,7 @@ When the user submits, the widget sends a structured payload:
 ## Tips
 
 - Ensure your site origin is allowlisted on the API for your Site ID; otherwise browser calls may be blocked by CORS.
-- For local testing with the API at a different origin, set `apiBaseUrl` accordingly.
+- For local testing against a different API origin, you can override `apiBaseUrl` in `Fidbak.init`, but it’s not required for normal usage.
 - Use `debounceMs` to reduce duplicates during rapid interactions.
 - Use `themeOverrides` to match your brand but keep good contrast for accessibility.
 
