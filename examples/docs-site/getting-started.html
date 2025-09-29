@@ -29,40 +29,38 @@
         <pre><code>&lt;script src="https://unpkg.com/fidbak@latest/dist/fidbak.min.js"&gt;&lt;/script&gt;</code></pre>
         <h2>Usage</h2>
         <pre><code>&lt;script src="https://unpkg.com/fidbak@latest/dist/fidbak.min.js"&gt;&lt;/script&gt;
-&lt;script&gt;
-  Fidbak.init({
-    siteId: 'YOUR_SITE_ID',
-    theme: 'auto',
-    position: 'br',
-    includeQuery: false,
-    captureSelection: true
-    // apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev' // optional for custom env
-  });
-&lt;/script&gt;</code></pre>
+        &lt;script&gt;
+          Fidbak.init({
+            siteId: 'YOUR_SITE_ID',
+            theme: 'auto',
+            position: 'br',
+            includeQuery: false,
+            captureSelection: true
+          });
         <h2>Next Steps</h2>
         <p>Try leaving feedback with the floating button. The nearest heading and selected text will be captured.</p>
       </div>
     </main>
     <footer>Example © 2025</footer>
-    <script>
+    <script type="module">
+      import Fidbak from '@fidbak/widget';
       Fidbak.init({
-        siteId: 'demo-site',
+        siteId: 'puma-docs',
         theme: 'light',
         position: 'br',
         includeQuery: false,
         captureSelection: true,
-        // apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
         debounceMs: 30000,
         themeOverrides: {
           fontFamily: 'Inter, system-ui, sans-serif',
           radius: { card: 20, input: 16, button: 24, thumb: 24, close: 24 },
           colors: {
+            primaryStart: '#22c55e',
             primaryEnd:   '#16a34a',
             primaryText:  '#fff',
             borderLight:  '#e5e7eb',
             borderDark:   '#374151',
             fabBgLight:   '#111',
-            fabBgDark:    '#111',
             fabTextLight: '#fff',
             fabTextDark:  '#fff',
             focusRing: '#FFEB3B'

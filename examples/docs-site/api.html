@@ -38,14 +38,14 @@
       </div>
     </main>
     <footer>Example © 2025</footer>
-    <script>
+    <script type="module">
+      import Fidbak from '@fidbak/widget';
       Fidbak.init({
-        siteId: 'demo-site',
+        siteId: 'puma-docs',
         theme: 'auto',
         position: 'br',
         includeQuery: false,
         captureSelection: true,
-        // apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
         debounceMs: 30000,
         themeOverrides: {
           fontFamily: 'Inter, system-ui, sans-serif',

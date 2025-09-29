@@ -20,7 +20,7 @@ Fidbak is a lightweight widget and dashboard for collecting page‑level feedbac
 ```html
 <script src="https://unpkg.com/@fidbak/widget@latest/dist/fidbak.min.global.js"></script>
 <script>
-  Fidbak.init({
+  window.fidbak('init', {
     siteId: 'your-site-id', // from dashboard
     // Optional: apiBaseUrl if different env, theme, etc.
     // apiBaseUrl: 'https://fidbak-api.primary-account-45e.workers.dev',
@@ -172,6 +172,62 @@ The dashboard uses Clerk JWTs for owner‑protected endpoints (e.g., listing/man
 
 - Ensure the page origin embedding the widget is in your site’s Allowed Origins.
 - Align environments: the widget and dashboard should talk to the same API.
+
+---
+
+## Use in a Next.js App
+
+You can integrate the widget in two simple ways.
+
+### Option A: CDN (recommended for speed)
+1) Place this in your root layout (App Router) or `_app.tsx` document body:
+```tsx
+// src/app/layout.tsx
+import Script from 'next/script';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <Script src="https://unpkg.com/@fidbak/widget@latest/dist/fidbak.min.global.js" strategy="afterInteractive" />
+        <Script id="fidbak-init" strategy="afterInteractive">
+          {`
+            window.fidbak && window.fidbak('init', {
+              siteId: 'your-site-id',
+              theme: 'auto',
+              position: 'br'
+            });
+          `}
+        </Script>
+        {children}
+      </body>
+    </html>
+  );
+}
+```
+
+### Option B: ESM import
+1) Use a client component to initialize after mount:
+```tsx
+// app/components/FidbakClient.tsx
+'use client';
+import { useEffect } from 'react';
+import Fidbak from '@fidbak/widget';
+
+export default function FidbakClient() {
+  useEffect(() => {
+    Fidbak.init({ siteId: 'your-site-id', theme: 'auto', position: 'br' });
+  }, []);
+  return null;
+}
+```
+2) Render `<FidbakClient />` once in your layout or `_app.tsx`.
+
+### Test it
+- Add your dev origin (e.g., `http://localhost:3000`) to Allowed Origins for the site in the Dashboard.
+- Start Next.js and open the app; the FAB should appear bottom-right.
+- Submit feedback and check Network → `/v1/feedback` → status 202.
+- If webhooks are configured for the site, you’ll receive a Slack (or custom) notification.
 
 ## Roadmap
 - We plan to support route-aware FAB visibility so you can show it only on certain sections (e.g., `/docs`).

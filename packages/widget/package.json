@@ -1,6 +1,6 @@
 {
   "name": "@fidbak/widget",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Framework-free feedback FAB + modal (UMD for CDN, ESM for npm)",
   "type": "module",
   "main": "dist/fidbak.fab.min.js",

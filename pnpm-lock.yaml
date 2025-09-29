@@ -78,8 +78,8 @@ importers:
   examples/docs-site:
     dependencies:
       '@fidbak/widget':
-        specifier: workspace:^
-        version: link:../../packages/widget
+        specifier: ^0.1.9
+        version: 0.1.9
     devDependencies:
       typescript:
         specifier: ^5.5.4
@@ -632,6 +632,9 @@ packages:
   '@fastify/busboy@2.1.1':
     resolution: {integrity: sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA==}
     engines: {node: '>=14'}
+
+  '@fidbak/widget@0.1.9':
+    resolution: {integrity: sha512-S1lrysJEpAeSq5k6q/Z/bmJwomYJs+iDXsGXcrQkUsWGoLilQxgDpXnIxNksmjujud2N/cYHa7qZAfR/Q4aI1A==}
 
   '@humanfs/core@0.19.1':
     resolution: {integrity: sha512-5DyQ4+1JEUzejeK1JGICcideyfUbGixgS9jNgex5nqkW+cY7WZhxBigmieN5Qnw9ZosSNVC9KQKyb+GUaGyKUA==}
@@ -2933,6 +2936,8 @@ snapshots:
       levn: 0.4.1
 
   '@fastify/busboy@2.1.1': {}
+
+  '@fidbak/widget@0.1.9': {}
 
   '@humanfs/core@0.19.1': {}
 

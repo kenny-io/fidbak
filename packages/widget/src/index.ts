@@ -90,6 +90,8 @@ function openModal(invoker?: HTMLElement) {
   overlay.setAttribute('aria-modal', 'true');
   overlay.setAttribute('aria-label', 'Feedback dialog');
   overlay.style.position = 'fixed';
+  // Make sure overlay is always on top of app content
+  overlay.style.zIndex = '2147483647';
   overlay.style.inset = '0';
   const v = themeVars();
   overlay.style.background = v.colors.overlay;
