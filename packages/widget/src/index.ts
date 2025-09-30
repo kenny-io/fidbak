@@ -398,7 +398,8 @@ export function init(options: InitOptions) {
     const base = String((options as any)?.apiBaseUrl || DEFAULT_API_BASE).trim();
     const u = new URL(base);
     // Normalize: drop trailing slash
-    (options as any).apiBaseUrl = u.origin + (u.pathname.replace(/\/$/, '')) + (u.search || '') + (u.hash || '');
+    const normalizedPath = u.pathname.replace(/\/+$/, '');
+    (options as any).apiBaseUrl = u.origin + normalizedPath + (u.search || '') + (u.hash || '');
   } catch {
     console.error('[fidbak] init: apiBaseUrl must be an absolute URL, e.g. https://fidbak-api.example.com');
     return; // do not initialize without a valid API base
@@ -707,7 +708,7 @@ async function sendFeedback(partial: {
     console.error('[fidbak] invalid apiBaseUrl; must be absolute http(s) URL');
     return;
   }
-  base = base.replace(/\/$/, '');
+  base = base.replace(/\/+$/, '');
   const url = `${base}/v1/feedback`;
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (options.signSecret) {
