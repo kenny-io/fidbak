@@ -142,15 +142,6 @@ When the user submits, the widget sends a structured payload:
 
 ---
 
-## Programmatic Usage
-
-- **Open the modal manually:**
-  - (Planned) `fidbak('open')` will open the modal programmatically in a future version.
-- **Re-render FAB:**
-  - `fidbak('render')` will re-render the FAB using the current options.
-
----
-
 ## Tips
 
 - Ensure your site origin is allowlisted on the API for your Site ID; otherwise browser calls may be blocked by CORS.
@@ -174,51 +165,55 @@ The dashboard uses Clerk JWTs for owner‑protected endpoints (e.g., listing/man
 
 ## Use in a Next.js App
 
-You can integrate the widget in two simple ways.
+* Open the [Fidbak dashboard](https://fidbak.dev/dashboard) and create a site to get your `siteId`. While creating the site, ensure `http://localhost:3000` or whichever port your Next.js app runs on is in Allowed Origins.
+    
+* Create a FidbakWidget component: 
 
-### Option A: CDN (recommended for speed)
-1) Place this in your root layout (App Router) or `_app.tsx` document body:
 ```tsx
-// src/app/layout.tsx
-import Script from 'next/script';
+// app/components/FidbakWidget.tsx
+"use client";
+import { useEffect } from "react";
+import { fidbak } from "@fidbak/widget";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body>
-        <Script src="https://unpkg.com/@fidbak/widget@latest/dist/fidbak.min.global.js" strategy="afterInteractive" />
-        <Script id="fidbak-init" strategy="afterInteractive">
-          {`
-            window.fidbak && window.fidbak('init', {
-              siteId: 'your-site-id',
-              theme: 'auto',
-              position: 'br'
-            });
-          `}
-        </Script>
-        {children}
-      </body>
-    </html>
-  );
-}
-```
-
-### Option B: ESM import
-1) Use a client component to initialize after mount:
-```tsx
-// app/components/FidbakClient.tsx
-'use client';
-import { useEffect } from 'react';
-import Fidbak from '@fidbak/widget';
-
-export default function FidbakClient() {
+export default function FidbakWidget() {
   useEffect(() => {
-    Fidbak.init({ siteId: 'your-site-id', theme: 'auto', position: 'br' });
+    fidbak("init", {
+      siteId: "your-site-id", // real Site ID from your dashboard/API
+      theme: "auto",
+      position: "br",
+    });
   }, []);
   return null;
 }
+
 ```
-2) Render `<FidbakClient />` once in your layout or `_app.tsx`.
+
+Then and add it to your Next.js root layout file `app/layout.tsx`:
+
+```tsx
+import FidbakWidget from '@/components/FidbakWidget'
+import { Inter } from 'next/font/google'
+import './globals.css'
+
+const inter = Inter({ subsets: ['latin'] })
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>
+        <FidbakWidget />
+        {children}
+      </body>
+    </html>
+  )
+}
+```
+
+* Run your app and confirm the FAB shows. Submit a feedback and check your [Fidbak dashboard](https://fidbak.dev/dashboard) for results and analytics.
 
 ### Test it
 - Add your dev origin (e.g., `http://localhost:3000`) to Allowed Origins for the site in the Dashboard.

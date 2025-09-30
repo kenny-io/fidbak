@@ -210,34 +210,51 @@ async function verifyClerkJWT(env: Env, token: string): Promise<AuthUser | undef
     const aud = env.CLERK_AUDIENCE;
     if (!iss || !jwksUrl) return undefined;
     if (payload.iss && !(String(payload.iss).startsWith(iss))) return undefined;
+    // Only enforce audience when both sides present; allow tokens without aud
     if (aud && payload.aud && payload.aud !== aud) return undefined;
     if (typeof payload.exp === 'number' && Date.now() / 1000 > payload.exp) return undefined;
 
     const keys = await fetchJwks(jwksUrl);
-    const key = keys.find((k: any) => !header.kid || k.kid === header.kid) || keys[0];
-    if (!key) return undefined;
+    if (!keys || keys.length === 0) return undefined;
 
     const algo = (header.alg as string) || 'RS256';
     if (!/^RS(256|384|512)$/.test(algo)) return undefined;
-
-    const cryptoKey = await crypto.subtle.importKey(
-      'jwk',
-      key,
-      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-      false,
-      ['verify']
-    );
     const data = new TextEncoder().encode(`${h}.${p}`);
-    const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sig, data);
-    if (!ok) return undefined;
+
+    // Try verification against all available JWKS keys if kid doesn't match
+    const candidates = header.kid ? [
+      ...keys.filter((k: any) => k.kid === header.kid),
+      ...keys.filter((k: any) => k.kid !== header.kid),
+    ] : keys;
+
+    let verified = false;
+    for (const jwk of candidates) {
+      try {
+        const cryptoKey = await crypto.subtle.importKey(
+          'jwk',
+          jwk,
+          { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+          false,
+          ['verify']
+        );
+        if (await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sig, data)) {
+          verified = true;
+          break;
+        }
+      } catch {
+        // try next key
+      }
+    }
+    if (!verified) return undefined;
+
     // Try multiple Clerk payload shapes for email
     const email: string | undefined =
       payload.email ||
-      payload['email_address'] ||
-      payload['primary_email_address'] ||
-      (Array.isArray(payload.email_addresses) && payload.email_addresses[0]?.email_address) ||
-      (payload.user && (payload.user.email || payload.user.email_address));
-    const sub: string | undefined = payload.sub;
+      (payload as any)['email_address'] ||
+      (payload as any)['primary_email_address'] ||
+      (Array.isArray((payload as any).email_addresses) && (payload as any).email_addresses[0]?.email_address) ||
+      ((payload as any).user && (((payload as any).user.email) || ((payload as any).user.email_address)));
+    const sub: string | undefined = (payload as any).sub;
     if (!sub) return undefined;
     return { sub, email };
   } catch {
