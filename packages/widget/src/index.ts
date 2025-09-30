@@ -1,7 +1,7 @@
 import type { FidbakAPI, InitOptions, RenderOptions, FeedbackPayload, ThemeOverrides } from './types';
 
 // Default production API base; can be overridden via options.apiBaseUrl
-const DEFAULT_API_BASE = 'https://fidbak-api.primary-account-45e.workers.dev';
+const DEFAULT_API_BASE = 'https://fidbak-api-production.primary-account-45e.workers.dev';
 
 const STATE: {
   inited: boolean;
