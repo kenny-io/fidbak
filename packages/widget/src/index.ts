@@ -634,7 +634,8 @@ function withinDebounce(siteId: string, pageId: string, nearest: string) {
     const raw = localStorage.getItem(key);
     if (!raw) return false;
     const last = parseInt(raw, 10);
-    const win = STATE.options?.debounceMs ?? 10 * 60 * 1000;
+    const win = STATE.options?.debounceMs ?? 0;
+    if (win <= 0) return false;
     return Date.now() - last < win;
   } catch {
     return false;
@@ -643,6 +644,8 @@ function withinDebounce(siteId: string, pageId: string, nearest: string) {
 
 function markDebounce(siteId: string, pageId: string, nearest: string) {
   try {
+    const win = STATE.options?.debounceMs ?? 0;
+    if (win <= 0) return; // disabled
     localStorage.setItem(debounceKey(siteId, pageId, nearest), String(Date.now()));
   } catch {}
 }
@@ -705,8 +708,9 @@ async function sendFeedback(partial: {
   // apiBaseUrl is validated in init(); normalize here as a safeguard
   let base = String(options.apiBaseUrl || '').trim();
   if (!/^https?:\/\//.test(base)) {
-    console.error('[fidbak] invalid apiBaseUrl; must be absolute http(s) URL');
-    return;
+    const msg = '[fidbak] invalid apiBaseUrl; must be absolute http(s) URL';
+    derror(msg);
+    throw new Error(msg);
   }
   base = base.replace(/\/+$/, '');
   const url = `${base}/v1/feedback`;
@@ -719,8 +723,15 @@ async function sendFeedback(partial: {
     dlog('POST', url, payload);
     const resp = await fetch(url, { method: 'POST', headers, body, keepalive: true });
     dlog('POST resp', resp.status);
+    if (!resp.ok) {
+      const msg = `[fidbak] POST failed: ${resp.status}`;
+      derror(msg);
+      throw new Error(msg);
+    }
   } catch (e) {
     console.warn('fidbak: POST error', (e as any)?.message || e);
+    throw e;
   }
+  // Only mark success to prevent blocking future attempts after failures
   markDebounce(options.siteId, ctx.pageId, String(ctx.nearestHeading || ''));
 }
