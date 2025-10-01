@@ -481,6 +481,28 @@ export default {
       }
     }
 
+    // POST /v1/sites/:id/delete (owner-only; deletes site, feedback, webhooks)
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/delete$/);
+      if (m && request.method === 'POST') {
+        const siteId = decodeURIComponent(m[1] || '');
+        const { origin: reqOrigin } = cors(request);
+        const authUser = await getAuth(env, request);
+        if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const siteForAuth = await getSiteFull(env, siteId);
+        if (!siteForAuth) return notFound(reqOrigin || '*');
+        if (!isOwnerOfSite(siteForAuth, authUser)) {
+          return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        }
+        try {
+          await deleteSite(env, siteId);
+          return json({ ok: true, siteId }, { status: 200 }, reqOrigin || '*');
+        } catch {
+          return bad('delete_failed', reqOrigin || '*');
+        }
+      }
+    }
+
     // GET /v1/sites/:id  (site details) - require owner auth
     {
       const m = url.pathname.match(/^\/v1\/sites\/([^/]+)$/);
@@ -822,6 +844,20 @@ async function updateSiteCors(env: Env, siteId: string, cors: string[]) {
     return;
   }
   if (SITES[siteId]) SITES[siteId].cors = cors;
+}
+
+// Hard delete a site and related rows
+async function deleteSite(env: Env, siteId: string) {
+  if (env.DB) {
+    // Order: feedback -> webhooks -> site
+    await env.DB.prepare('DELETE FROM feedback WHERE site_id = ?').bind(siteId).run();
+    try { await env.DB.prepare('DELETE FROM site_webhooks WHERE site_id = ?').bind(siteId).run(); } catch {}
+    await env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(siteId).run();
+    return;
+  }
+  // memory fallback
+  try { delete SITES[siteId]; } catch {}
+  try { MEM.feedback = MEM.feedback.filter((f) => f.site_id !== siteId); } catch {}
 }
 
 // List sites with basic metadata and feedback_count
