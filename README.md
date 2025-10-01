@@ -3,20 +3,20 @@
 Fidbak is a lightweight widget and dashboard for collecting page‑level feedback (👍 / 👎 with optional comments). You embed a tiny script; submissions go to the Fidbak API; the dashboard visualizes analytics. Per‑site webhooks let you forward events to Slack or any custom endpoint.
 
 - CDN (latest): `https://unpkg.com/@fidbak/widget@latest/dist/fidbak.min.global.js`
-- API (production): `https://fidbak-api.primary-account-45e.workers.dev`
+- API (production): `https://fidbak-api-production.primary-account-45e.workers.dev`
 
 ---
 
-## Quick Start (Dashboard‑first)
+## Quick Start
 
-1) Open the dashboard and create a site. The dashboard will:
+1) Open the [Fidbak dashboard](https://fidbak.dev) and create a site. The dashboard will:
 - Return your `siteId`.
 - Let you add Allowed Origins (CORS).
 - Optionally add per‑site Webhooks (Slack or any URL).
 
 2) Copy the generated snippet and paste it before `</body>` of your site:
 
-### CDN (no build tools)
+### CDN 
 ```html
 <script src="https://unpkg.com/@fidbak/widget@latest/dist/fidbak.min.global.js"></script>
 <script>
@@ -33,7 +33,7 @@ The widget renders a floating action button (FAB). Clicking it opens a modal whe
 
 ## Configuration Options
 
-Call `Fidbak.init(options)` with the following fields.
+Call `fidbak('init', options)` with the following fields.
 
 ### Required
 - **siteId** (string)
@@ -57,8 +57,8 @@ The widget auto-configures its API base URL; you don’t need to set `apiBaseUrl
 - **captureSelection** (boolean)
   - When true, the widget attempts to capture a small excerpt of selected text and the nearest heading for extra context.
 
-- **debounceMs** (number, default `600000`)
-  - Minimum interval (in ms) to suppress duplicate feedback from the same page/heading/user within a short time window.
+- **debounceMs** (number, default `0`)
+  - When `> 0`, suppress duplicate feedback from the same page/heading/user within that window (ms). When `<= 0`, debounce is disabled.
 
 - **debug** (boolean)
   - Enables verbose console logs. You can also set `localStorage['fidbak:debug']='1'`.
@@ -118,34 +118,10 @@ interface ThemeOverrides {
 
 ---
 
-## Page Context & What Gets Sent
-
-When the user submits, the widget sends a structured payload:
-```ts
-{
-  siteId: string,
-  pageId: string,        // pathname or pathname+query depending on includeQuery
-  rating: 'up' | 'down',
-  comment?: string,
-  email?: string,
-  context: {
-    title, url, referrer, scrollPct, nearestHeading, selectedText, ua, platform: 'web'
-  },
-  destinations?: string[],   // from webhookUrl
-  webhookSecret?: string,
-  policy?: PolicyOptions,
-  themeOverrides?: ThemeOverrides
-}
-```
-
-`pageId` ties feedback to the current page. Use the Dashboard to filter by site and page, or query the API directly.
-
----
-
 ## Tips
 
 - Ensure your site origin is allowlisted on the API for your Site ID; otherwise browser calls may be blocked by CORS.
-- For local testing against a different API origin, you can override `apiBaseUrl` in `Fidbak.init`, but it’s not required for normal usage.
+- For local testing against a different API origin, you can override `apiBaseUrl` in `fidbak('init', {...})`, but it’s not required for normal usage.
 - Use `debounceMs` to reduce duplicates during rapid interactions.
 - Use `themeOverrides` to match your brand but keep good contrast for accessibility.
 
@@ -173,7 +149,7 @@ The dashboard uses Clerk JWTs for owner‑protected endpoints (e.g., listing/man
 // app/components/FidbakWidget.tsx
 "use client";
 import { useEffect } from "react";
-import { fidbak } from "@fidbak/widget";
+import fidbak from "fidbak/widget";
 
 export default function FidbakWidget() {
   useEffect(() => {

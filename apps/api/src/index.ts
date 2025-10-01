@@ -8,6 +8,9 @@ export interface Env {
   CLERK_ISSUER?: string; // e.g. https://your-subdomain.clerk.accounts.dev
   CLERK_JWKS_URL?: string; // e.g. https://your-subdomain.clerk.accounts.dev/.well-known/jwks.json
   CLERK_AUDIENCE?: string; // optional audience check
+  // Optional secondary issuer support (e.g., allow local dev tokens against prod API)
+  CLERK_ISSUER_2?: string;
+  CLERK_JWKS_URL_2?: string;
   // Default dashboard origin to auto-allowlist on site creation
   FIDBAK_DASH_ORIGIN?: string; // e.g. https://fidbak-dash.pages.dev
 }
@@ -207,43 +210,42 @@ async function verifyClerkJWT(env: Env, token: string): Promise<AuthUser | undef
 
     const iss = env.CLERK_ISSUER || '';
     const jwksUrl = env.CLERK_JWKS_URL || '';
+    const iss2 = env.CLERK_ISSUER_2 || '';
+    const jwksUrl2 = env.CLERK_JWKS_URL_2 || '';
     const aud = env.CLERK_AUDIENCE;
     if (!iss || !jwksUrl) return undefined;
-    if (payload.iss && !(String(payload.iss).startsWith(iss))) return undefined;
     // Only enforce audience when both sides present; allow tokens without aud
     if (aud && payload.aud && payload.aud !== aud) return undefined;
     if (typeof payload.exp === 'number' && Date.now() / 1000 > payload.exp) return undefined;
 
-    const keys = await fetchJwks(jwksUrl);
-    if (!keys || keys.length === 0) return undefined;
+    // Helper to attempt verify against a given JWKS
+    const attemptVerify = async (jwksUrlTry: string, issTry: string): Promise<boolean> => {
+      if (!jwksUrlTry) return false;
+      // if token has iss, ensure it matches this issuer start
+      if (payload.iss && issTry && !String(payload.iss).startsWith(issTry)) return false;
+      const keys = await fetchJwks(jwksUrlTry);
+      if (!keys || keys.length === 0) return false;
+      const candidates = header.kid ? [
+        ...keys.filter((k: any) => k.kid === header.kid),
+        ...keys.filter((k: any) => k.kid !== header.kid),
+      ] : keys;
+      for (const jwk of candidates) {
+        try {
+          const cryptoKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+          if (await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sig, data)) return true;
+        } catch {}
+      }
+      return false;
+    };
 
     const algo = (header.alg as string) || 'RS256';
     if (!/^RS(256|384|512)$/.test(algo)) return undefined;
     const data = new TextEncoder().encode(`${h}.${p}`);
 
     // Try verification against all available JWKS keys if kid doesn't match
-    const candidates = header.kid ? [
-      ...keys.filter((k: any) => k.kid === header.kid),
-      ...keys.filter((k: any) => k.kid !== header.kid),
-    ] : keys;
-
-    let verified = false;
-    for (const jwk of candidates) {
-      try {
-        const cryptoKey = await crypto.subtle.importKey(
-          'jwk',
-          jwk,
-          { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-          false,
-          ['verify']
-        );
-        if (await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sig, data)) {
-          verified = true;
-          break;
-        }
-      } catch {
-        // try next key
-      }
+    let verified = await attemptVerify(jwksUrl, iss);
+    if (!verified && jwksUrl2) {
+      verified = await attemptVerify(jwksUrl2, iss2 || '');
     }
     if (!verified) return undefined;
 
@@ -277,9 +279,11 @@ export default {
     if (isPreflight) {
       const h = new Headers({
         'access-control-allow-origin': origin || '*',
-        'access-control-allow-methods': 'GET,POST,OPTIONS',
+        'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
         // Allow Authorization for authenticated dashboard requests
         'access-control-allow-headers': 'content-type,authorization,x-fidbak-signature',
+        // Cache preflight for 10 minutes to avoid repeated OPTIONS
+        'access-control-max-age': '600',
       });
       return new Response(null, { status: 204, headers: h });
     }
@@ -378,7 +382,9 @@ export default {
           destinations,
           typeof body.webhookSecret === 'string' ? body.webhookSecret : undefined,
           policy,
-        ).catch(() => {}),
+        ).catch((e) => {
+          try { console.warn('fidbak: fanout fatal', row.site_id, row.id, (e as any)?.message || e); } catch {}
+        }),
       );
       return json({ accepted: true, id: row.id }, { status: 202 }, allow);
     }
@@ -394,6 +400,28 @@ export default {
         return json({ sites }, {}, reqOrigin || '*');
       } catch (e) {
         return bad('list_failed', reqOrigin || '*');
+      }
+    }
+
+    // DELETE /v1/sites/:id (owner-only; alias for deletion)
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)$/);
+      if (m && request.method === 'DELETE') {
+        const siteId = decodeURIComponent(m[1] || '');
+        const { origin: reqOrigin } = cors(request);
+        const authUser = await getAuth(env, request);
+        if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        const siteForAuth = await getSiteFull(env, siteId);
+        if (!siteForAuth) return notFound(reqOrigin || '*');
+        if (!isOwnerOfSite(siteForAuth, authUser)) {
+          return new Response('Forbidden', { status: 403, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        }
+        try {
+          await deleteSite(env, siteId);
+          return json({ ok: true, siteId }, { status: 200 }, reqOrigin || '*');
+        } catch {
+          return bad('delete_failed', reqOrigin || '*');
+        }
       }
     }
 
@@ -962,44 +990,52 @@ async function fanout(
   policy?: any,
 ) {
   const all: string[] = Array.isArray(destinations) ? [...destinations] : [];
+  const redact = (u: string) => u.replace(/(https:\/\/hooks\.slack\.com\/services\/)[^/]+\/[^/]+\/.+/, '$1***');
   // Load site-managed webhooks
   try {
     const hooks = await listSiteWebhooks(env, row.site_id);
     for (const h of hooks) {
       if (h.active && /^https?:\/\//.test(h.url)) all.push(h.url);
     }
-  } catch {}
+    try { console.log('fidbak: fanout targets', row.site_id, row.id, { provided: (destinations||[]).length, stored: hooks.length, total: all.length }); } catch {}
+  } catch (e) {
+    try { console.warn('fidbak: listSiteWebhooks failed', row.site_id, (e as any)?.message || e); } catch {}
+  }
+
+  if (all.length === 0) {
+    try { console.log('fidbak: fanout skipped (no destinations)', row.site_id, row.id); } catch {}
+    return;
+  }
 
   await Promise.all(
     all.map(async (url) => {
-      // basic redaction for logs
-      const redacted = url.replace(/(https:\/\/hooks\.slack\.com\/services\/)[^/]+\/[^/]+\/.+/, '$1***');
+      const redacted = redact(url);
       try {
         const isSlack = /^https:\/\/hooks\.slack\.com\//.test(url);
         let bodyStr = '';
         const headers: Record<string, string> = { 'content-type': 'application/json' };
 
         if (isSlack) {
-          // Slack expects { text?, blocks? } and rejects unknown top-level fields
           const blocks = makeSlackBlocks(env, row);
           bodyStr = JSON.stringify({ text: row.comment || `${row.rating.toUpperCase()} feedback on ${row.page_id}`, blocks });
-          // Do not attach HMAC header for Slack
+          try { console.log('fidbak: webhook -> Slack', row.site_id, row.id, redacted); } catch {}
         } else {
-          // Generic JSON webhook
           bodyStr = JSON.stringify({ type: 'fidbak.feedback.v1', data: row });
-          // Prefer per-site stored secret when present
           let secretToUse: string | undefined = webhookSecret;
           try {
             const hook = await getSiteWebhookByUrl(env, row.site_id, url);
             if (hook?.secret) secretToUse = hook.secret;
           } catch {}
           if (secretToUse) headers['x-fidbak-signature'] = await hmacSHA256Hex(secretToUse, bodyStr);
+          try { console.log('fidbak: webhook -> Generic', row.site_id, row.id, new URL(url).hostname); } catch {}
         }
 
         const resp = await fetch(url, { method: 'POST', headers, body: bodyStr });
         if (!resp.ok) {
           console.warn('fidbak: webhook non-2xx', redacted, resp.status);
           try { console.warn('fidbak: webhook resp', await resp.text()); } catch {}
+        } else {
+          try { console.log('fidbak: webhook delivered', redacted, resp.status); } catch {}
         }
       } catch (e) {
         console.warn('fidbak: webhook error', redacted, (e as any)?.message || e);
