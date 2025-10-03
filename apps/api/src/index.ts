@@ -1,8 +1,94 @@
+// Welcome email using provided template (inline for Worker)
+function renderWelcomeHtml(firstName: string, ctaUrl: string, ctaText: string): string {
+  const safe = firstName || 'there';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Welcome to Fidbak</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb;"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px;"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);"><tr><td style="background:linear-gradient(135deg,#f97316 0%,#ea580c 100%);padding:40px 40px 30px;text-align:center;"><h1 style="margin:0;color:#ffffff;font-size:32px;font-weight:700;letter-spacing:-0.5px;">Fidbak</h1><p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">Lightweight customer feedback platform</p></td></tr><tr><td style="padding:40px;"><p style="margin:0 0 8px;color:#111827;font-size:16px;line-height:1.6;">Hi ${safe},</p><p style="margin:0 0 16px;color:#4b5563;font-size:16px;line-height:1.6;">I’m Kenny. Thanks for signing up for Fidbak.</p><p style="margin:0 0 16px;color:#4b5563;font-size:16px;line-height:1.6;">I started Fidbak to make feedback simple and useful so you can make better, user driven decisions for your product and business.</p><p style="margin:0 0 24px;color:#4b5563;font-size:16px;line-height:1.6;">Whether you are just exploring or ready to collect feedback on your site, I am glad you are here.</p><table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;"><tr><td style="background-color:#fef3c7;padding:20px;border-radius:8px;border-left:4px solid #f97316;"><p style="margin:0;color:#78350f;font-size:14px;line-height:1.5;">If you have any questions or need help with integrating Fidbak into your site, hit reply and I will get back to you. I read and answer every message myself.</p></td></tr></table>
+  <div style="text-align:center;margin:24px 0;">
+    <a href="${ctaUrl}" style="display:inline-block;background-color:#f97316;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">
+      ${ctaText}
+    </a>
+  </div>
+  <p style="margin:0 0 4px;color:#4b5563;font-size:16px;line-height:1.6;">Glad to have you with us.</p><br><p style="margin:0;color:#111827;font-size:16px;line-height:1.6;"><strong>Kenny</strong><br><span style="color:#6b7280;font-size:14px;">Founder, Fidbak</span></p></td></tr><tr><td style="padding:24px 40px;background-color:#f9fafb;border-top:1px solid #e5e7eb;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;line-height:1.5;">© 2025 Fidbak. All rights reserved.<br>You're receiving this because you created a Fidbak account.</p></td></tr></table></td></tr></table></body></html>`;
+}
+
+// ---------- plan features helpers ----------
+async function getPlanFeatures(env: Env, planId: string | null | undefined): Promise<any> {
+  const pid = (planId || 'free').toString();
+  if (!env.DB) return defaultFeatures(pid);
+  try {
+    const row = await env.DB
+      .prepare('SELECT features_json FROM plans WHERE id = ? LIMIT 1')
+      .bind(pid)
+      .first<{ features_json?: string | null }>();
+    if (row?.features_json) {
+      try { return JSON.parse(row.features_json); } catch {}
+    }
+  } catch {}
+  return defaultFeatures(pid);
+}
+
+function defaultFeatures(planId: string): any {
+  // Sensible defaults if plans table missing
+  if (planId === 'team') return { sites: 10, seats: 5 };
+  if (planId === 'pro') return { sites: 3, seats: 1 };
+  if (planId === 'enterprise') return { sites: 50, seats: 25 };
+  return { sites: 1, seats: 1 }; // free
+}
+
+// ---- Org role helpers ----
+async function getOrgRole(env: Env, orgId: string, user: AuthUser): Promise<{ role: string | null; status: string | null; is_owner: boolean; is_admin: boolean }> {
+  if (!env.DB) return { role: null, status: null, is_owner: false, is_admin: false };
+  // Owner by sub
+  try {
+    const owner = await env.DB.prepare('SELECT 1 FROM orgs WHERE id = ? AND owner_sub = ? LIMIT 1').bind(orgId, user.sub).first<any>();
+    if (owner) return { role: 'owner', status: 'active', is_owner: true, is_admin: true };
+  } catch {}
+  // Member by user_sub
+  try {
+    const m = await env.DB
+      .prepare('SELECT role, status FROM org_members WHERE org_id = ? AND user_sub = ? LIMIT 1')
+      .bind(orgId, user.sub)
+      .first<{ role: string; status: string }>();
+    const role = m?.role || null;
+    const status = m?.status || null;
+    const is_admin = !!(status === 'active' && (role === 'owner' || role === 'admin'));
+    return { role, status, is_owner: false, is_admin };
+  } catch {}
+  return { role: null, status: null, is_owner: false, is_admin: false };
+}
+
+async function ensureOrgAdmin(env: Env, orgId: string, user: AuthUser): Promise<boolean> {
+  const r = await getOrgRole(env, orgId, user);
+  return r.is_admin;
+}
+
+// New: Team invite email template (styled like welcome)
+function renderInviteHtml(inviterName: string, orgName: string, acceptUrl: string): string {
+  const inviter = inviterName || 'A teammate';
+  const org = orgName || 'your team';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>You're invited to Fidbak</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb;"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px;"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);"><tr><td style="background:linear-gradient(135deg,#f97316 0%,#ea580c 100%);padding:40px 40px 30px;text-align:center;"><h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.3px;">You're invited to Fidbak</h1><p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">Lightweight customer feedback platform</p></td></tr><tr><td style="padding:40px;"><p style="margin:0 0 16px;color:#111827;font-size:16px;line-height:1.6;">Hey there,</p><p style="margin:0 0 16px;color:#4b5563;font-size:16px;line-height:1.6;"><strong>${inviter}</strong> has invited you to join <strong>${org}</strong> on Fidbak.</p><div style="text-align:center;margin:24px 0;"><a href="${acceptUrl}" style="display:inline-block;background-color:#f97316;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Accept invite</a></div><p style="margin:0;color:#6b7280;font-size:13px;line-height:1.6;">If you didn’t expect this, you can ignore this email.</p></td></tr><tr><td style="padding:24px 40px;background-color:#f9fafb;border-top:1px solid #e5e7eb;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;line-height:1.5;">© 2025 Fidbak. All rights reserved.</p></td></tr></table></td></tr></table></body></html>`;
+}
+
+async function sendWelcomeEmail(env: Env, to: string, firstName: string, ctaUrl: string, ctaText: string): Promise<void> {
+  if (!env.RESEND_API_KEY || !env.INVITE_FROM_EMAIL) return;
+  const subject = 'Welcome to Fidbak';
+  const html = renderWelcomeHtml(firstName || 'there', ctaUrl, ctaText);
+  const text = `Hi ${firstName || 'there'},\n\nThanks for signing up for Fidbak. Get started: ${ctaUrl}\n\nIf you have any questions, just reply to this email.\n\n— Kenny, Founder`;
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: env.INVITE_FROM_EMAIL, to: [to], subject, html, text }),
+  });
+  try {
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      console.error('Resend welcome email failed', resp.status, body);
+    }
+  } catch {}
+}
 export interface Env {
   DB?: D1Database; // optional binding
   FIDBAK_DASHBOARD_BASE?: string; // used in Slack footer link
   // Deprecated: global webhook removed; use per-site managed webhooks instead
-  FIDBAK_SLACK_WEBHOOK?: string; // no longer used
   FIDBAK_SLACK_CHANNEL?: string; // no longer used
   // Clerk config for JWT verification
   CLERK_ISSUER?: string; // e.g. https://your-subdomain.clerk.accounts.dev
@@ -13,6 +99,216 @@ export interface Env {
   CLERK_JWKS_URL_2?: string;
   // Default dashboard origin to auto-allowlist on site creation
   FIDBAK_DASH_ORIGIN?: string; // e.g. https://fidbak-dash.pages.dev
+  // Dev-only: when '1', the worker will attempt to auto-create missing tables in local env
+  FIDBAK_DEV_AUTOMIGRATE?: string;
+  // Stripe (Phase 2)
+  STRIPE_SECRET_KEY?: string; // sk_live_... or sk_test_...
+  STRIPE_WEBHOOK_SECRET?: string; // whsec_...
+  STRIPE_PRICE_PRO?: string; // price_...
+  STRIPE_PRICE_TEAM?: string; // price_...
+  STRIPE_PRICE_ENTERPRISE?: string; // optional
+  STRIPE_PORTAL_RETURN_URL?: string; // where to send users back to dashboard
+  // Quota enforcement flags
+  FIDBAK_ENFORCE_QUOTAS?: string; // '1' to enable hard blocking
+  FIDBAK_BILLING_GRACE_DAYS?: string; // e.g., '7'
+  // Invites & email
+  RESEND_API_KEY?: string; // for sending invite emails
+  INVITE_FROM_EMAIL?: string; // from address
+  DASH_BASE_URL?: string; // e.g. https://fidbak.dev
+}
+
+// ----- Invites helpers -----
+async function generateInviteToken(): Promise<string> {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function buildAcceptUrl(env: Env, token: string): string {
+  const base = (env.DASH_BASE_URL && env.DASH_BASE_URL.startsWith('http'))
+    ? env.DASH_BASE_URL
+    : `https://${env.DASH_BASE_URL || 'fidbak.dev'}`;
+  const b = base.replace(/\/$/, '');
+  return `${b}/accept-invite?token=${encodeURIComponent(token)}`;
+}
+
+async function sendInviteEmail(env: Env, to: string, orgName: string, acceptUrl: string, inviterName?: string): Promise<void> {
+  if (!env.RESEND_API_KEY || !env.INVITE_FROM_EMAIL) return;
+  const inviter = inviterName && inviterName.trim().length ? inviterName.trim() : orgName;
+  const subject = `${inviter} invited you to join ${orgName} on Fidbak`;
+  const html = renderInviteHtml(inviter, orgName, acceptUrl);
+  const text = `You’ve been invited to join ${orgName} on Fidbak.\n\nAccept invite: ${acceptUrl}\n\nIf you didn’t expect this, you can ignore this email.`;
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from: env.INVITE_FROM_EMAIL, to: [to], subject, html, text }),
+  });
+  // Best-effort: log failures for debugging in tail logs but do not throw
+  try {
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      console.error('Resend invite email failed', resp.status, body);
+    }
+  } catch {}
+}
+
+// Shared helper: POST to Stripe and return JSON or throw with detailed error
+async function stripePost(env: Env, url: string, body: URLSearchParams): Promise<any> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  });
+  const text = await res.text();
+  let json: any = null;
+  try { json = text ? JSON.parse(text) : null; } catch {}
+  if (!res.ok) {
+    const msg = json?.error?.message || text || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return json;
+}
+
+// ---------- billing helpers (Phase 2: Stripe skeleton) ----------
+function planToPrice(env: Env, planId: string): string | null {
+  const p = (s?: string) => (s && s.trim().length > 0 ? s.trim() : null);
+  if (planId === 'pro') return p(env.STRIPE_PRICE_PRO);
+  if (planId === 'team') return p(env.STRIPE_PRICE_TEAM);
+  if (planId === 'enterprise') return p(env.STRIPE_PRICE_ENTERPRISE);
+  return p(env.STRIPE_PRICE_PRO);
+}
+
+function mapPriceToPlan(env: Env, priceId?: string): string | null {
+  if (!priceId) return null;
+  if (env.STRIPE_PRICE_PRO === priceId) return 'pro';
+  if (env.STRIPE_PRICE_TEAM === priceId) return 'team';
+  if (env.STRIPE_PRICE_ENTERPRISE === priceId) return 'enterprise';
+  return null;
+}
+
+async function getOrCreateOrgForOwner(env: Env, owner: { sub?: string; email?: string }): Promise<{ org: any; created: boolean }> {
+  if (!env.DB) throw new Error('DB not configured');
+  const sub = owner.sub || null;
+  const email = owner.email || null;
+  // 1) Prefer an active membership org for this user
+  if (sub) {
+    try {
+      const memberOrg = await env.DB
+        .prepare(`SELECT o.*
+                  FROM org_members m
+                  JOIN orgs o ON o.id = m.org_id
+                  WHERE m.user_sub = ? AND m.status = 'active'
+                  ORDER BY datetime(COALESCE(m.joined_at, m.invited_at)) DESC
+                  LIMIT 1`)
+        .bind(sub)
+        .first<any>();
+      if (memberOrg) return { org: memberOrg, created: false } as any;
+    } catch {}
+  }
+  // 2) Fallback to an org owned by this user (sub preferred, then email)
+  let org = await env.DB.prepare('SELECT * FROM orgs WHERE owner_sub = ? LIMIT 1').bind(sub).first<any>();
+  if (!org && email) {
+    org = await env.DB.prepare('SELECT * FROM orgs WHERE owner_email = ? LIMIT 1').bind(email).first<any>();
+  }
+  if (org) return { org, created: false } as any;
+  // 3) Create new org on-the-fly with Free plan (personal org)
+  const id = crypto.randomUUID();
+  const created = new Date().toISOString();
+  await env.DB
+    .prepare('INSERT INTO orgs (id, name, owner_sub, owner_email, plan_id, stripe_customer_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, email ? `${email.split('@')[0]}'s Org` : 'My Org', sub, email, 'free', null, created)
+    .run();
+  const createdOrg = await env.DB.prepare('SELECT * FROM orgs WHERE id = ?').bind(id).first<any>();
+  return { org: createdOrg as any, created: true };
+}
+
+async function getOrCreateStripeCustomer(env: Env, org: any, authUser: { email?: string }) {
+  if (org?.stripe_customer_id) return org.stripe_customer_id as string;
+  if (!env.STRIPE_SECRET_KEY) throw new Error('Stripe not configured');
+  const email = authUser?.email || org?.owner_email || undefined;
+  const body = new URLSearchParams();
+  if (email) body.set('email', email);
+  body.set('metadata[org_id]', org.id);
+  const json = await stripePost(env, 'https://api.stripe.com/v1/customers', body);
+  if (!json?.id) throw new Error('stripe customers.create failed: missing id');
+  const customerId = json.id as string;
+  if (env.DB) {
+    await env.DB.prepare('UPDATE orgs SET stripe_customer_id = ? WHERE id = ?').bind(customerId, org.id).run();
+  }
+  return customerId;
+}
+
+async function createStripeCheckoutSession(env: Env, args: { customer?: string; customer_email?: string; priceId: string; mode: 'subscription'; success_url: string; cancel_url: string }) {
+  const body = new URLSearchParams();
+  body.set('mode', args.mode);
+  if (args.customer) body.set('customer', args.customer);
+  if (args.customer_email) body.set('customer_email', args.customer_email);
+  body.set('line_items[0][price]', args.priceId);
+  body.set('line_items[0][quantity]', '1');
+  body.set('success_url', args.success_url);
+  body.set('cancel_url', args.cancel_url);
+  const json = await stripePost(env, 'https://api.stripe.com/v1/checkout/sessions', body);
+  return json;
+}
+
+async function createStripePortalSession(env: Env, customerId: string, returnUrl: string) {
+  const body = new URLSearchParams();
+  body.set('customer', customerId);
+  body.set('return_url', returnUrl);
+  const json = await stripePost(env, 'https://api.stripe.com/v1/billing_portal/sessions', body);
+  return json;
+}
+
+async function handleStripeEvent(env: Env, event: any) {
+  if (!env.DB) return;
+  const type = String(event?.type || '');
+  // Extract org_id when possible from metadata; otherwise resolve via customer lookup
+  const data = event?.data?.object || {};
+  if (type === 'checkout.session.completed') {
+    const customer = data?.customer as string | undefined;
+    const sub = data?.subscription || {};
+    const priceId = sub?.items?.data?.[0]?.price?.id || data?.display_items?.[0]?.price?.id || undefined;
+    const status = sub?.status || 'active';
+    const current_period_end = sub?.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : undefined;
+    if (customer) {
+      const org = await env.DB.prepare('SELECT * FROM orgs WHERE stripe_customer_id = ? LIMIT 1').bind(customer).first<any>();
+      const plan = mapPriceToPlan(env, priceId) || 'pro';
+      if (org) {
+        await env.DB.prepare('UPDATE orgs SET plan_id = ?, price_id = ?, subscription_status = ?, current_period_end = ? WHERE id = ?')
+          .bind(plan, priceId || null, status, current_period_end || null, org.id)
+          .run();
+      }
+    }
+  } else if (type === 'customer.subscription.updated' || type === 'customer.subscription.created') {
+    const sub = data;
+    const customer = sub?.customer as string | undefined;
+    const priceId = sub?.items?.data?.[0]?.price?.id as string | undefined;
+    const status = sub?.status || null;
+    const current_period_end = sub?.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
+    const cancel_at = sub?.cancel_at ? new Date(sub.cancel_at * 1000).toISOString() : null;
+    const trial_end = sub?.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null;
+    if (customer) {
+      const org = await env.DB.prepare('SELECT * FROM orgs WHERE stripe_customer_id = ? LIMIT 1').bind(customer).first<any>();
+      const plan = mapPriceToPlan(env, priceId);
+      if (org) {
+        await env.DB.prepare('UPDATE orgs SET plan_id = COALESCE(?, plan_id), price_id = ?, subscription_status = ?, current_period_end = ?, cancel_at = ?, trial_end = ? WHERE id = ?')
+          .bind(plan || null, priceId || null, status, current_period_end, cancel_at, trial_end, org.id)
+          .run();
+      }
+    }
+  } else if (type === 'customer.subscription.deleted') {
+    const customer = data?.customer as string | undefined;
+    if (customer) {
+      const org = await env.DB.prepare('SELECT * FROM orgs WHERE stripe_customer_id = ? LIMIT 1').bind(customer).first<any>();
+      if (org) await env.DB.prepare('UPDATE orgs SET plan_id = ?, subscription_status = ? WHERE id = ?').bind('free', 'canceled', org.id).run();
+    }
+  }
 }
 
 // New: list sites by owner using sub (preferred) then email
@@ -207,6 +503,8 @@ async function verifyClerkJWT(env: Env, token: string): Promise<AuthUser | undef
     const header = JSON.parse(new TextDecoder().decode(b64urlToUint8(h)));
     const payload = JSON.parse(new TextDecoder().decode(b64urlToUint8(p)));
     const sig = b64urlToUint8(s);
+    // IMPORTANT: declare `data` before it is captured by attemptVerify()
+    const data = new TextEncoder().encode(`${h}.${p}`);
 
     const iss = env.CLERK_ISSUER || '';
     const jwksUrl = env.CLERK_JWKS_URL || '';
@@ -240,14 +538,18 @@ async function verifyClerkJWT(env: Env, token: string): Promise<AuthUser | undef
 
     const algo = (header.alg as string) || 'RS256';
     if (!/^RS(256|384|512)$/.test(algo)) return undefined;
-    const data = new TextEncoder().encode(`${h}.${p}`);
 
     // Try verification against all available JWKS keys if kid doesn't match
     let verified = await attemptVerify(jwksUrl, iss);
     if (!verified && jwksUrl2) {
       verified = await attemptVerify(jwksUrl2, iss2 || '');
     }
-    if (!verified) return undefined;
+    if (!verified) {
+      // Dev fallback: in local env allow unverified tokens if issuer matches configured dev issuer and token not expired
+      const isDev = env.FIDBAK_DEV_AUTOMIGRATE === '1';
+      const issMatch = (payload.iss && ((iss && String(payload.iss).startsWith(iss)) || (iss2 && String(payload.iss).startsWith(iss2)))) || false;
+      if (!(isDev && issMatch)) return undefined;
+    }
 
     // Try multiple Clerk payload shapes for email
     const email: string | undefined =
@@ -279,7 +581,7 @@ export default {
     if (isPreflight) {
       const h = new Headers({
         'access-control-allow-origin': origin || '*',
-        'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+        'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
         // Allow Authorization for authenticated dashboard requests
         'access-control-allow-headers': 'content-type,authorization,x-fidbak-signature',
         // Cache preflight for 10 minutes to avoid repeated OPTIONS
@@ -288,7 +590,419 @@ export default {
       return new Response(null, { status: 204, headers: h });
     }
 
+    // ---------- Phase 2: Billing (Stripe) ----------
+    if (url.pathname === '/v1/billing/checkout' && request.method === 'POST') {
+      const { origin: reqOrigin } = cors(request);
+      try {
+        const authUser = await getAuth(env, request);
+        if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        if (!env.STRIPE_SECRET_KEY) return json({ error: 'Billing not configured' }, { status: 501 }, reqOrigin || '*');
+
+        let body: any = {};
+        try { body = await request.json(); } catch {}
+        const planId = String(body?.planId || 'pro');
+        const priceId = planToPrice(env, planId);
+        if (!priceId) return json({ error: 'Unsupported plan' }, { status: 400 }, reqOrigin || '*');
+
+        const { org } = await getOrCreateOrgForOwner(env, authUser);
+        let customerId = await getOrCreateStripeCustomer(env, org, authUser);
+        try {
+          const session = await createStripeCheckoutSession(env, {
+            customer: customerId,
+            priceId,
+            mode: 'subscription',
+            success_url: (env.FIDBAK_DASHBOARD_BASE || reqOrigin || '') + '/billing?success=1',
+            cancel_url: (env.FIDBAK_DASHBOARD_BASE || reqOrigin || '') + '/billing?canceled=1',
+          });
+          return json({ url: session?.url || null }, {}, reqOrigin || '*');
+        } catch (e: any) {
+          const msg = String(e?.message || e || '');
+          if (msg.includes('No such customer')) {
+            // Stale customer from another Stripe env/account; reset and retry once
+            if (env.DB) {
+              await env.DB.prepare('UPDATE orgs SET stripe_customer_id = NULL WHERE id = ?').bind(org.id).run();
+            }
+            customerId = await getOrCreateStripeCustomer(env, { ...org, stripe_customer_id: null }, authUser);
+            const session = await createStripeCheckoutSession(env, {
+              customer: customerId,
+              priceId,
+              mode: 'subscription',
+              success_url: (env.FIDBAK_DASHBOARD_BASE || reqOrigin || '') + '/billing?success=1',
+              cancel_url: (env.FIDBAK_DASHBOARD_BASE || reqOrigin || '') + '/billing?canceled=1',
+            });
+            return json({ url: session?.url || null }, {}, reqOrigin || '*');
+          }
+          throw e;
+        }
+      } catch (e: any) {
+        return json({ error: String(e?.message || e || 'Unknown error') }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    if (url.pathname === '/v1/billing/portal' && request.method === 'GET') {
+      const { origin: reqOrigin } = cors(request);
+      try {
+        const authUser = await getAuth(env, request);
+        if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+        if (!env.STRIPE_SECRET_KEY) return json({ error: 'Billing not configured' }, { status: 501 }, reqOrigin || '*');
+
+        const { org } = await getOrCreateOrgForOwner(env, authUser);
+        const customerId = await getOrCreateStripeCustomer(env, org, authUser);
+        const session = await createStripePortalSession(env, customerId, env.STRIPE_PORTAL_RETURN_URL || (env.FIDBAK_DASHBOARD_BASE || reqOrigin || '')); 
+        return json({ url: session?.url || null }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e || 'Unknown error') }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    if (url.pathname === '/v1/billing/webhook' && request.method === 'POST') {
+      // Stripe webhook signature verification using existing HMAC helper
+      const sigHeader = request.headers.get('stripe-signature') || '';
+      const raw = await request.text();
+      if (!env.STRIPE_WEBHOOK_SECRET || !env.STRIPE_SECRET_KEY) {
+        // Not configured; acknowledge to avoid retries in dev
+        return new Response('ok', { status: 200 });
+      }
+      // Parse Stripe-Signature header format: t=timestamp,v1=signature[,...]
+      const parts = sigHeader.split(',').map(s => s.trim());
+      const tPart = parts.find(p => p.startsWith('t='));
+      const v1Parts = parts.filter(p => p.startsWith('v1='));
+      if (!tPart || v1Parts.length === 0) {
+        return new Response('bad signature', { status: 400 });
+      }
+      const t = tPart.substring(2);
+      const signedPayload = `${t}.${raw}`;
+      const expected = await hmacSHA256Hex(env.STRIPE_WEBHOOK_SECRET, signedPayload);
+      const ok = v1Parts.some(v => v.substring(3).toLowerCase() === expected.toLowerCase());
+      if (!ok) {
+        return new Response('bad signature', { status: 400 });
+      }
+      // Optional tolerance check (5 minutes)
+      const ts = Number(t);
+      const tolerance = 5 * 60; // seconds
+      if (Number.isFinite(ts)) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (Math.abs(nowSec - ts) > tolerance) return new Response('signature expired', { status: 400 });
+      }
+      let event: any = {};
+      try { event = JSON.parse(raw); } catch { return new Response('bad request', { status: 400 }); }
+      try { await handleStripeEvent(env, event); } catch {}
+      return new Response('ok', { status: 200 });
+    }
+
+    if (url.pathname === '/v1/org' && request.method === 'GET') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      try {
+        const found = await getOrCreateOrgForOwner(env, authUser);
+        const org = found.org;
+        const justCreated = found.created;
+        // Fire-and-forget welcome email on first creation
+        if (justCreated && authUser.email) {
+          const first = authUser.email.split('@')[0] || 'there';
+          const base = (env.DASH_BASE_URL && env.DASH_BASE_URL.startsWith('http')) ? env.DASH_BASE_URL : (reqOrigin || '');
+          const dash = (base || '').replace(/\/$/, '');
+          const ctaUrl = dash ? `${dash}/new-site` : '/new-site';
+          const ctaText = 'Create your first site';
+          ctx.waitUntil(sendWelcomeEmail(env, authUser.email, first, ctaUrl, ctaText));
+        }
+        return json({
+          id: org.id,
+          name: org.name,
+          plan_id: org.plan_id || 'free',
+          stripe_customer_id: org.stripe_customer_id || null,
+          created_at: org.created_at,
+          price_id: org.price_id || null,
+          subscription_status: org.subscription_status || null,
+          current_period_end: org.current_period_end || null,
+          cancel_at: org.cancel_at || null,
+          trial_end: org.trial_end || null,
+        }, {}, reqOrigin || '*');
+      } catch {
+        return json({ id: null, plan_id: 'free' }, {}, reqOrigin || '*');
+      }
+    }
+
+    // PATCH /v1/org (update name)
+    if (url.pathname === '/v1/org' && request.method === 'PATCH') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      if (!env.DB) return json({ error: 'No DB' }, { status: 500 }, reqOrigin || '*');
+      try {
+        const body = await request.json<{ name?: string }>().catch(() => ({} as any));
+        const name = (body?.name || '').trim();
+        if (!name) return json({ error: 'name_required' }, { status: 400 }, reqOrigin || '*');
+        const { org } = await getOrCreateOrgForOwner(env, authUser);
+        await env.DB.prepare('UPDATE orgs SET name = ? WHERE id = ?').bind(name, org.id).run();
+        return json({ ok: true, name }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    // Public-ish plans listing (read-only) – DB is source of truth
+    if (url.pathname === '/v1/plans' && request.method === 'GET') {
+      const { origin: reqOrigin } = cors(request);
+      if (!env.DB) return json({ plans: [] }, {}, reqOrigin || '*');
+      try {
+        const res = await env.DB
+          .prepare('SELECT id, name, monthly_event_limit, stripe_price_id AS price_id, features_json FROM plans ORDER BY CASE id WHEN "free" THEN 0 WHEN "pro" THEN 1 WHEN "team" THEN 2 WHEN "enterprise" THEN 3 ELSE 99 END, name')
+          .all<{ id: string; name?: string; monthly_event_limit?: number | null; price_id?: string | null; features_json?: string | null }>();
+        const plans = (res.results || []).map((p: any) => ({
+          id: p.id as string,
+          name: (p.name || p.id) as string,
+          monthly_event_limit: p.monthly_event_limit ?? null,
+          price_id: p.price_id || null,
+          features: (() => { try { return p.features_json ? JSON.parse(p.features_json) : {}; } catch { return {}; } })(),
+        }));
+        return json({ plans }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    // GET /v1/org/members (list)
+    if (url.pathname === '/v1/org/members' && request.method === 'GET') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      if (!env.DB) return json({ members: [] }, {}, reqOrigin || '*');
+      try {
+        const { org } = await getOrCreateOrgForOwner(env, authUser);
+        // Any active member can view members in this org
+        const res = await env.DB
+          .prepare('SELECT id, org_id, user_sub, email, role, status, invited_at, joined_at FROM org_members WHERE org_id = ? ORDER BY datetime(invited_at) DESC')
+          .bind(org.id)
+          .all<{ id: string; org_id: string; user_sub?: string | null; email?: string | null; role: string; status: string; invited_at: string; joined_at?: string | null }>();
+        return json({ members: (res.results as any[]) || [] }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    // GET /v1/org/members/pending (for current user)
+    if (url.pathname === '/v1/org/members/pending' && request.method === 'GET') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      if (!env.DB) return json({ invites: [] }, {}, reqOrigin || '*');
+      try {
+        const email = (authUser.email || '').toLowerCase();
+        const nowIso = new Date().toISOString();
+        const res = await env.DB
+          .prepare('SELECT id, org_id, email, role, status, invited_at, invite_token FROM org_members WHERE status = "pending" AND lower(email) = ? AND (invite_expires_at IS NULL OR invite_expires_at > ?) ORDER BY datetime(invited_at) DESC')
+          .bind(email, nowIso)
+          .all<{ id: string; org_id: string; email: string; role: string; status: string; invited_at: string; invite_token: string }>();
+        return json({ invites: (res.results as any[]) || [] }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    // POST /v1/org/members/invite { email, role? }
+    if (url.pathname === '/v1/org/members/invite' && request.method === 'POST') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      if (!env.DB) return json({ error: 'No DB' }, { status: 500 }, reqOrigin || '*');
+      let body: any = {};
+      try { body = await request.json(); } catch {}
+      const email = String(body?.email || '').trim();
+      const role = String(body?.role || 'member');
+      if (!email) return json({ error: 'email_required' }, { status: 400 }, reqOrigin || '*');
+      try {
+        const { org } = await getOrCreateOrgForOwner(env, authUser);
+        // Admins only
+        const isAdmin = await ensureOrgAdmin(env, org.id, authUser);
+        if (!isAdmin) return json({ error: 'forbidden' }, { status: 403 }, reqOrigin || '*');
+        // Soft seat cap enforcement
+        const limit = await getOrgSeatsLimit(env, org.id, org.plan_id || 'free');
+        const count = await getOrgMemberCount(env, org.id);
+        if (typeof limit === 'number' && count >= limit) {
+          return json({ error: 'seat_limit_reached' }, { status: 403 }, reqOrigin || '*');
+        }
+        const token = await generateInviteToken();
+        const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        // Replace any existing pending invite for this email in this org
+        await env.DB.prepare('DELETE FROM org_members WHERE org_id = ? AND lower(email) = lower(?) AND status = "pending"').bind(org.id, email).run();
+        await env.DB
+          .prepare(
+            `INSERT INTO org_members (id, org_id, user_sub, email, role, status, invited_at, invite_token, invite_expires_at, invited_by)
+             VALUES (lower(hex(randomblob(8))), ?, NULL, ?, ?, 'pending', strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?)`
+          )
+          .bind(org.id, email, role, token, expires, authUser.sub || null)
+          .run();
+        const acceptUrl = buildAcceptUrl(env, token);
+        if (env.RESEND_API_KEY && env.INVITE_FROM_EMAIL) {
+          const inviterName = authUser.email ? authUser.email.split('@')[0] : undefined;
+          try { await sendInviteEmail(env, email, org.name || 'Your team', acceptUrl, inviterName); } catch {}
+        }
+        return json({ ok: true, accept_url: acceptUrl }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    // GET /v1/org/members/accept?token=...
+    if (url.pathname === '/v1/org/members/accept' && request.method === 'GET' && url.searchParams.get('token')) {
+      const { origin: reqOrigin } = cors(request);
+      if (!env.DB) return json({ ok: false, error: 'no_db' }, { status: 500 }, reqOrigin || '*');
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      const token = url.searchParams.get('token') || '';
+      try {
+        const nowIso = new Date().toISOString();
+        const row = await env.DB
+          .prepare('SELECT id, org_id, email FROM org_members WHERE invite_token = ? AND status = "pending" AND (invite_expires_at IS NULL OR invite_expires_at > ?)')
+          .bind(token, nowIso)
+          .first<{ id: string; org_id: string; email: string }>();
+        if (!row) return json({ ok: false, error: 'invalid_or_expired' }, { status: 400 }, reqOrigin || '*');
+        await env.DB
+          .prepare('UPDATE org_members SET status = "active", joined_at = strftime("%Y-%m-%dT%H:%M:%fZ","now"), user_sub = ?, invite_token = NULL, invite_expires_at = NULL WHERE id = ?')
+          .bind(authUser.sub || null, row.id)
+          .run();
+        return json({ ok: true }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ ok: false, error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    // POST /v1/org/members/accept (in-app accept latest pending invite for this email)
+    if (url.pathname === '/v1/org/members/accept' && request.method === 'POST') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      if (!env.DB) return json({ error: 'No DB' }, { status: 500 }, reqOrigin || '*');
+      try {
+        const email = (authUser.email || '').toLowerCase();
+        const nowIso = new Date().toISOString();
+        const pending = await env.DB
+          .prepare(`SELECT id FROM org_members 
+                    WHERE status = 'pending' AND lower(email) = ? 
+                      AND (invite_expires_at IS NULL OR invite_expires_at > ?)
+                    ORDER BY datetime(invited_at) DESC LIMIT 1`)
+          .bind(email, nowIso)
+          .first<{ id: string }>();
+        if (!pending?.id) return json({ ok: false, error: 'no_pending' }, { status: 404 }, reqOrigin || '*');
+        await env.DB
+          .prepare(`UPDATE org_members SET status = 'active', joined_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), user_sub = ?, invite_token = NULL, invite_expires_at = NULL WHERE id = ?`)
+          .bind(authUser.sub || null, pending.id)
+          .run();
+        return json({ ok: true }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    // POST /v1/org/members/remove { email?, user_sub? }
+    if (url.pathname === '/v1/org/members/remove' && request.method === 'POST') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      if (!env.DB) return json({ error: 'No DB' }, { status: 500 }, reqOrigin || '*');
+      let body: any = {};
+      try { body = await request.json(); } catch {}
+      const email = (body?.email ? String(body.email) : '').trim();
+      const user_sub = (body?.user_sub ? String(body.user_sub) : '').trim();
+      if (!email && !user_sub) return json({ error: 'identifier_required' }, { status: 400 }, reqOrigin || '*');
+      try {
+        const { org } = await getOrCreateOrgForOwner(env, authUser);
+        // Admins only
+        const isAdmin = await ensureOrgAdmin(env, org.id, authUser);
+        if (!isAdmin) return json({ error: 'forbidden' }, { status: 403 }, reqOrigin || '*');
+        await env.DB
+          .prepare(`DELETE FROM org_members WHERE org_id = ? AND (lower(email) = lower(?) OR user_sub = ?)`) 
+          .bind(org.id, email || '', user_sub || '')
+          .run();
+        return json({ ok: true }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    // GET /v1/orgs – list orgs the user belongs to (owner or active member)
+    if (url.pathname === '/v1/orgs' && request.method === 'GET') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      if (!env.DB) return json({ orgs: [] }, {}, reqOrigin || '*');
+      try {
+        const sql = `
+          SELECT o.*, 'owner' AS rel_role, 'active' AS rel_status
+          FROM orgs o WHERE o.owner_sub = ?
+          UNION ALL
+          SELECT o.*, m.role AS rel_role, m.status AS rel_status
+          FROM org_members m JOIN orgs o ON o.id = m.org_id
+          WHERE m.user_sub = ? AND m.status = 'active' AND o.owner_sub != ?
+          ORDER BY created_at DESC
+        `;
+        const res = await env.DB.prepare(sql).bind(authUser.sub, authUser.sub, authUser.sub).all<any>();
+        const rows = (res.results as any[]) || [];
+        return json({ orgs: rows.map(r => ({
+          id: r.id,
+          name: r.name,
+          plan_id: r.plan_id,
+          created_at: r.created_at,
+          rel_role: r.rel_role,
+          rel_status: r.rel_status
+        })) }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    // GET /v1/orgs/:id/members – members of a given org (must belong to org)
+    if (url.pathname.startsWith('/v1/orgs/') && url.pathname.endsWith('/members') && request.method === 'GET') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      if (!env.DB) return json({ members: [] }, {}, reqOrigin || '*');
+      const partsM = url.pathname.split('/');
+      const orgId = partsM[3] || '';
+      if (!orgId) return json({ error: 'org_required' }, { status: 400 }, reqOrigin || '*');
+      try {
+        const role = await getOrgRole(env, orgId, authUser);
+        if (!role.is_owner && role.status !== 'active') return json({ error: 'forbidden' }, { status: 403 }, reqOrigin || '*');
+        const res = await env.DB
+          .prepare('SELECT id, org_id, user_sub, email, role, status, invited_at, joined_at FROM org_members WHERE org_id = ? ORDER BY datetime(invited_at) DESC')
+          .bind(orgId)
+          .all<any>();
+        return json({ members: (res.results as any[]) || [] }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
+    // POST /v1/orgs/:id/leave – leave an org (must be active member; owners cannot leave)
+    if (url.pathname.startsWith('/v1/orgs/') && url.pathname.endsWith('/leave') && request.method === 'POST') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      if (!env.DB) return json({ error: 'No DB' }, { status: 500 }, reqOrigin || '*');
+      const partsL = url.pathname.split('/');
+      const orgId = partsL[3] || '';
+      if (!orgId) return json({ error: 'org_required' }, { status: 400 }, reqOrigin || '*');
+      try {
+        // Owners cannot leave via this endpoint
+        const r = await getOrgRole(env, orgId, authUser);
+        if (r.is_owner) return json({ error: 'owner_cannot_leave' }, { status: 400 }, reqOrigin || '*');
+        if (r.status !== 'active') return json({ error: 'not_a_member' }, { status: 400 }, reqOrigin || '*');
+        await env.DB.prepare('DELETE FROM org_members WHERE org_id = ? AND user_sub = ?').bind(orgId, authUser.sub).run();
+        return json({ ok: true }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
+      }
+    }
+
     if (url.pathname === '/' || url.pathname === '/v1/health') {
+      // Best-effort initialize billing tables (no-op if they already exist or D1 is not bound)
+      ctx.waitUntil(ensureBillingTables(env).catch(() => {}));
+      // Dev-only: auto-migrate feedback table locally if missing
+      if (env.FIDBAK_DEV_AUTOMIGRATE === '1') {
+        ctx.waitUntil(ensureDevFeedbackTable(env).catch(() => {}));
+      }
       return json({ ok: true }, {}, origin || '*');
     }
 
@@ -334,6 +1048,92 @@ export default {
       } else if (requireHmac) {
         // requireHmac true but no site secret -> reject
         return json({ accepted: false, reason: 'hmac_required' }, { status: 401 }, allow);
+      }
+      // Soft quota headers + optional hard enforcement: attempt to resolve org -> plan limit -> current usage
+      let quotaHeaders: Record<string, string> | undefined;
+      let planIdForQuota: string | undefined;
+      let numericLimit: number | null | undefined;
+      let usedEvents: number | undefined;
+      let subStatus: string | null | undefined;
+      let currentPeriodEndIso: string | null | undefined;
+      if (env.DB) {
+        try {
+          // Resolve org and plan for this site
+          const row = await env.DB
+            .prepare(`SELECT o.id as org_id, o.plan_id as plan_id, o.subscription_status as subscription_status, o.current_period_end as current_period_end FROM sites s JOIN orgs o ON o.id = s.org_id WHERE s.id = ?`)
+            .bind(siteId)
+            .first<{ org_id?: string; plan_id?: string; subscription_status?: string | null; current_period_end?: string | null }>();
+          const planId = row?.plan_id || 'free';
+          planIdForQuota = planId;
+          subStatus = row?.subscription_status || null;
+          currentPeriodEndIso = row?.current_period_end || null;
+          // Read plan limit
+          const p = await env.DB
+            .prepare('SELECT monthly_event_limit FROM plans WHERE id = ?')
+            .bind(planId)
+            .first<{ monthly_event_limit?: number | null }>();
+          const limit = (p && (p.monthly_event_limit === null || typeof p.monthly_event_limit === 'undefined')) ? null : Number(p?.monthly_event_limit || 0);
+          numericLimit = limit;
+          const usage = await getCurrentMonthUsageForSite(env, siteId);
+          usedEvents = usage.events;
+          let status: 'ok' | 'nearing' | 'exceeded' = 'ok';
+          if (limit !== null && limit > 0) {
+            const used = usage.events;
+            if (used >= limit) status = 'exceeded';
+            else if (used >= Math.max(1, Math.floor(limit * 0.8))) status = 'nearing';
+            quotaHeaders = {
+              'X-Fidbak-Quota': status,
+              'X-Fidbak-Quota-Limit': String(limit),
+              'X-Fidbak-Quota-Used': String(used),
+              'X-Fidbak-Plan': planId,
+            };
+          } else {
+            quotaHeaders = {
+              'X-Fidbak-Quota': 'ok',
+              'X-Fidbak-Quota-Limit': 'unlimited',
+              'X-Fidbak-Quota-Used': String(usage.events),
+              'X-Fidbak-Plan': planId,
+            };
+          }
+        } catch {}
+      }
+      // Optional hard enforcement using env flags
+      const enforce = env.FIDBAK_ENFORCE_QUOTAS === '1';
+      if (enforce) {
+        let blockReason: string | null = null;
+        // 1) Over monthly limit
+        if (numericLimit !== null && typeof numericLimit === 'number' && typeof usedEvents === 'number' && usedEvents >= numericLimit) {
+          blockReason = 'quota_exceeded';
+        }
+        // 2) Billing status gates
+        const nowMs = Date.now();
+        const graceDays = Number(env.FIDBAK_BILLING_GRACE_DAYS || '7');
+        const graceMs = isFinite(graceDays) ? graceDays * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+        const endMs = currentPeriodEndIso ? new Date(currentPeriodEndIso).getTime() : null;
+        if (!blockReason && subStatus) {
+          const status = String(subStatus);
+          if (status === 'unpaid' || status === 'incomplete_expired') {
+            blockReason = 'billing_unpaid';
+          } else if (status === 'past_due') {
+            if (endMs && nowMs > endMs + graceMs) blockReason = 'billing_past_due';
+          } else if (status === 'canceled') {
+            if (endMs && nowMs > endMs) {
+              // After cancellation period ends, enforce free cap if exceeded
+              try {
+                const freeRow = await env.DB!.prepare('SELECT monthly_event_limit FROM plans WHERE id = ?').bind('free').first<{ monthly_event_limit?: number | null }>();
+                const freeLimit = (freeRow && (freeRow.monthly_event_limit === null || typeof freeRow.monthly_event_limit === 'undefined')) ? null : Number(freeRow?.monthly_event_limit || 0);
+                if (freeLimit !== null && typeof usedEvents === 'number' && usedEvents >= freeLimit) blockReason = 'subscription_canceled';
+              } catch {}
+            }
+          }
+        }
+        if (blockReason) {
+          const resp = json({ accepted: false, reason: blockReason }, { status: 429 }, allow);
+          if (quotaHeaders) {
+            for (const [k, v] of Object.entries(quotaHeaders)) (resp.headers as any).set(k, v);
+          }
+          return resp;
+        }
       }
       // IP allow list (if provided in policy)
       if (policy?.ipAllow && Array.isArray(policy.ipAllow) && policy.ipAllow.length > 0) {
@@ -386,17 +1186,52 @@ export default {
           try { console.warn('fidbak: fanout fatal', row.site_id, row.id, (e as any)?.message || e); } catch {}
         }),
       );
-      return json({ accepted: true, id: row.id }, { status: 202 }, allow);
+      // Best-effort usage metering (non-blocking; fully optional)
+      ctx.waitUntil(
+        recordUsageEvent(env, row.site_id, row.id, row.created_at).catch((e: unknown) => {
+          try { console.warn('fidbak: usage record failed', row.site_id, row.id, (e as any)?.message || e); } catch {}
+        }),
+      );
+      const resp = json({ accepted: true, id: row.id }, { status: 202 }, allow);
+      if (quotaHeaders) {
+        for (const [k, v] of Object.entries(quotaHeaders)) (resp.headers as any).set(k, v);
+      }
+      return resp;
     }
 
-    // GET /v1/sites  (list sites)
+    // GET /v1/sites  (list sites for current org)
     if (url.pathname === '/v1/sites' && request.method === 'GET') {
       const { origin: reqOrigin } = cors(request);
-      const ownerEmailQuery = (url.searchParams.get('ownerEmail') || '').trim();
       const authUser = await getAuth(env, request).catch(() => undefined);
-      const ownerEmail = (authUser?.email || '').trim() || ownerEmailQuery;
       try {
-        const sites = await listSitesByOwner(env, { sub: authUser?.sub, email: ownerEmail || undefined });
+        const found = authUser ? await getOrCreateOrgForOwner(env, authUser) : undefined;
+        const orgId = found?.org?.id as string | undefined;
+        let sites: any[] = [];
+        if (env.DB && orgId) {
+          try {
+            const res = await env.DB
+              .prepare(`SELECT s.id, s.name, s.cors_json, s.created_at, s.verified_at
+                        FROM sites s WHERE s.org_id = ? ORDER BY datetime(s.created_at) DESC`)
+              .bind(orgId)
+              .all<{ id: string; name?: string; cors_json?: string; created_at: string; verified_at?: string | null }>();
+            const rows = (res.results as any[]) || [];
+            sites = rows.map(r => ({
+              id: r.id,
+              name: r.name,
+              owner_email: null,
+              cors: r.cors_json ? JSON.parse(r.cors_json) : [],
+              created_at: r.created_at,
+              verified_at: r.verified_at ?? null,
+            }));
+          } catch {
+            // Fallback to legacy owner-scoped listing
+            const ownerEmail = (authUser?.email || '').trim();
+            sites = await listSitesByOwner(env, { sub: authUser?.sub, email: ownerEmail || undefined });
+          }
+        } else {
+          const ownerEmail = (authUser?.email || '').trim();
+          sites = await listSitesByOwner(env, { sub: authUser?.sub, email: ownerEmail || undefined });
+        }
         return json({ sites }, {}, reqOrigin || '*');
       } catch (e) {
         return bad('list_failed', reqOrigin || '*');
@@ -425,7 +1260,26 @@ export default {
       }
     }
 
-    // POST /v1/sites  (self-serve create)
+    // GET /v1/sites/:id/usage/month (minimal usage for current month)
+    {
+      const m = url.pathname.match(/^\/v1\/sites\/([^/]+)\/usage\/month$/);
+      if (m && request.method === 'GET') {
+        const siteId = decodeURIComponent(m[1] || '');
+        const { origin: reqOrigin } = cors(request);
+        try {
+          const usage = await getCurrentMonthUsageForSite(env, siteId);
+          return json({ siteId, month: usage.month, events: usage.events }, {}, reqOrigin || '*');
+        } catch (e) {
+          // If billing tables/columns do not exist, return zeros
+          const now = new Date();
+          const yyyymm = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+          return json({ siteId, month: yyyymm, events: 0 }, {}, reqOrigin || '*');
+        }
+      }
+    }
+
+
+    // POST /v1/sites  (self-serve create, org-scoped)
     if (url.pathname === '/v1/sites' && request.method === 'POST') {
       const { origin: reqOrigin } = cors(request);
       const authUser = await getAuth(env, request);
@@ -436,12 +1290,10 @@ export default {
       } catch {}
       const id = (body?.id || '').trim();
       const name = (body?.name || '').trim() || id;
-      // Fallback to client-provided ownerEmail only if token lacks email
-      const owner_email = ((authUser.email || body?.ownerEmail || '') as string).trim().toLowerCase();
-      // Require some owner email for now until we add owner_user_id storage
-      if (!owner_email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(owner_email)) {
-        return bad('owner_email_required', reqOrigin || '*');
-      }
+      // Resolve current org and enforce plan site limit
+      const { org } = await getOrCreateOrgForOwner(env, authUser);
+      const features = await getPlanFeatures(env, org?.plan_id || 'free');
+      const maxSites = Number(features?.sites ?? 1);
       const originToAllow = (body?.origin || '').trim();
       const moreOrigins = Array.isArray(body?.origins) ? body.origins.filter((o: any) => typeof o === 'string' && /^https?:\/\//.test(o)).map((s: string) => s.trim()) : [];
       if (!id || !/^[a-z0-9-]{3,}$/.test(id)) return bad('invalid_site_id', reqOrigin || '*');
@@ -452,7 +1304,20 @@ export default {
       const set = new Set<string>([originToAllow, ...moreOrigins, dashboardOrigin]);
       const corsArr = Array.from(set);
       try {
-        await upsertSite(env, { id, name, owner_email, owner_user_id: authUser.sub, cors: corsArr, verify_token });
+        // Enforce site count limit by org
+        if (env.DB && org?.id) {
+          try {
+            const cnt = await env.DB
+              .prepare('SELECT COUNT(*) AS c FROM sites WHERE org_id = ?')
+              .bind(org.id)
+              .first<{ c: number }>();
+            const current = Number(cnt?.c || 0);
+            if (Number.isFinite(maxSites) && current >= maxSites) {
+              return json({ error: 'site_limit_reached' }, { status: 403 }, reqOrigin || '*');
+            }
+          } catch {}
+        }
+        await upsertSite(env, { id, name, owner_email: authUser.email || null, owner_user_id: authUser.sub, org_id: org?.id || null, cors: corsArr, verify_token });
         // Optional initial webhook
         if (body?.webhook && typeof body.webhook === 'object') {
           const wu = String(body.webhook.url || '').trim();
@@ -462,9 +1327,7 @@ export default {
             await createSiteWebhook(env, id, { url: wu, secret: ws, active });
           }
         }
-        const dashboard = env.FIDBAK_DASHBOARD_BASE
-          ? `${env.FIDBAK_DASHBOARD_BASE}/?siteId=${encodeURIComponent(id)}`
-          : undefined;
+        const dashboard = env.FIDBAK_DASHBOARD_BASE ? `${env.FIDBAK_DASHBOARD_BASE}/?siteId=${encodeURIComponent(id)}` : undefined;
         return json(
           { ok: true, siteId: id, dashboard, cors: corsArr, verifyToken: verify_token },
           { status: 201 },
@@ -836,7 +1699,7 @@ async function getSiteFull(
 
 async function upsertSite(
   env: Env,
-  data: { id: string; name: string; owner_email?: string | null; owner_user_id?: string | null; cors: string[]; verify_token?: string },
+  data: { id: string; name: string; owner_email?: string | null; owner_user_id?: string | null; org_id?: string | null; cors: string[]; verify_token?: string },
 ) {
   if (env.DB) {
     const cors_json = JSON.stringify(data.cors || []);
@@ -844,11 +1707,11 @@ async function upsertSite(
     try {
       await env.DB
         .prepare(
-          `INSERT INTO sites (id, name, owner_email, owner_user_id, cors_json, created_at, verify_token)
-           VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?)
-           ON CONFLICT(id) DO UPDATE SET name=excluded.name, owner_email=excluded.owner_email, owner_user_id=excluded.owner_user_id, cors_json=excluded.cors_json`,
+          `INSERT INTO sites (id, name, owner_email, owner_user_id, org_id, cors_json, created_at, verify_token)
+           VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?)
+           ON CONFLICT(id) DO UPDATE SET name=excluded.name, owner_email=excluded.owner_email, owner_user_id=excluded.owner_user_id, org_id=COALESCE(excluded.org_id, sites.org_id), cors_json=excluded.cors_json`,
         )
-        .bind(data.id, data.name, data.owner_email || null, data.owner_user_id || null, cors_json, data.verify_token || null)
+        .bind(data.id, data.name, data.owner_email || null, data.owner_user_id || null, data.org_id || null, cors_json, data.verify_token || null)
         .run();
     } catch {
       await env.DB
@@ -959,6 +1822,9 @@ async function listSites(
 async function storeFeedback(env: Env, row: FeedbackRow) {
   if (env.DB) {
     try {
+      if (env.FIDBAK_DEV_AUTOMIGRATE === '1') {
+        await ensureDevFeedbackTable(env);
+      }
       await env.DB.prepare(
         `INSERT INTO feedback (id, site_id, page_id, rating, comment, email, context_json, ip_hash, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -975,10 +1841,47 @@ async function storeFeedback(env: Env, row: FeedbackRow) {
           row.created_at,
         )
         .run();
+      try { console.log('fidbak: feedback inserted', row.site_id, row.id, row.created_at); } catch {}
       return;
-    } catch {}
+    } catch (e) {
+      try {
+        console.warn('fidbak: feedback insert failed, using memory fallback', row.site_id, row.id, (e as any)?.message || e);
+      } catch {}
+    }
   }
   MEM.feedback.unshift(row);
+}
+
+// Dev-only: ensure feedback table exists locally to avoid silent memory fallback during testing
+async function ensureDevFeedbackTable(env: Env) {
+  if (!env.DB) return;
+  // Only run in dev mode when explicitly enabled
+  if (env.FIDBAK_DEV_AUTOMIGRATE !== '1') return;
+  try {
+    const exists = await env.DB
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='feedback'")
+      .first<any>();
+    if (exists) return;
+  } catch {}
+  try {
+    await env.DB.exec(
+      `CREATE TABLE IF NOT EXISTS feedback (
+         id TEXT PRIMARY KEY,
+         site_id TEXT NOT NULL,
+         page_id TEXT,
+         rating TEXT NOT NULL,
+         comment TEXT,
+         email TEXT,
+         context_json TEXT,
+         ip_hash TEXT,
+         created_at TEXT NOT NULL
+       );
+       CREATE INDEX IF NOT EXISTS idx_feedback_site_created ON feedback(site_id, datetime(created_at));`
+    );
+    try { console.log('fidbak: dev automigrate created feedback table'); } catch {}
+  } catch (e) {
+    try { console.warn('fidbak: dev automigrate failed', (e as any)?.message || e); } catch {}
+  }
 }
 
 // ---------- fanout ----------
@@ -1132,6 +2035,98 @@ async function updateSiteWebhook(env: Env, siteId: string, id: string, patch: { 
   return { id: row.id, url: row.url, secret: row.secret ?? null, active: Number(row.active) === 1, created_at: row.created_at };
 }
 
+// ---------- billing helpers (Phase 1: optional per-site metering) ----------
+async function ensureBillingTables(env: Env) {
+  if (!env.DB) return;
+  try {
+    await env.DB.exec(
+      `CREATE TABLE IF NOT EXISTS usage_events_site (
+         id TEXT PRIMARY KEY,
+         site_id TEXT NOT NULL,
+         ts TEXT NOT NULL,
+         idem_key TEXT NOT NULL
+       );`
+    );
+  } catch {}
+  try {
+    await env.DB.exec(
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_site_site_ts ON usage_events_site(site_id, ts);`
+    );
+  } catch {}
+  try {
+    await env.DB.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_events_site_idem ON usage_events_site(idem_key);`
+    );
+  } catch {}
+  try {
+    await env.DB.exec(
+      `CREATE TABLE IF NOT EXISTS usage_monthly_site (
+         site_id TEXT NOT NULL,
+         yyyymm TEXT NOT NULL,
+         events INTEGER NOT NULL DEFAULT 0,
+         PRIMARY KEY (site_id, yyyymm)
+       );`
+    );
+  } catch {}
+}
+
+async function recordUsageEvent(env: Env, siteId: string, feedbackId: string, createdAtIso: string) {
+  if (!env.DB) return;
+  try {
+    await ensureBillingTables(env);
+    const ts = createdAtIso || new Date().toISOString();
+    const d = new Date(ts);
+    const yyyymm = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    // Insert event (idempotent)
+    await env.DB
+      .prepare('INSERT OR IGNORE INTO usage_events_site (id, site_id, ts, idem_key) VALUES (?, ?, ?, ?)')
+      .bind(feedbackId, siteId, ts, feedbackId)
+      .run();
+    // Upsert monthly aggregate
+    await env.DB
+      .prepare('INSERT INTO usage_monthly_site (site_id, yyyymm, events) VALUES (?, ?, 1) ON CONFLICT(site_id, yyyymm) DO UPDATE SET events = events + 1')
+      .bind(siteId, yyyymm)
+      .run();
+  } catch (e) {}
+}
+
+async function getCurrentMonthUsageForSite(env: Env, siteId: string): Promise<{ month: string; events: number }> {
+  const now = new Date();
+  const yyyymm = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  if (!env.DB) return { month: yyyymm, events: 0 };
+  // Step 1: monthly aggregate
+  try {
+    const row = await env.DB
+      .prepare('SELECT events FROM usage_monthly_site WHERE site_id = ? AND yyyymm = ?')
+      .bind(siteId, yyyymm)
+      .first<{ events: number }>();
+    if (row && typeof row.events === 'number' && Number(row.events) > 0) {
+      return { month: yyyymm, events: Number(row.events) };
+    }
+  } catch (e) {}
+
+  // Step 2: events table count
+  try {
+    const res = await env.DB
+      .prepare("SELECT COUNT(*) AS c FROM usage_events_site WHERE site_id = ? AND substr(ts,1,7) = ?")
+      .bind(siteId, yyyymm)
+      .first<{ c: number }>();
+    const eventsFromEvents = Number(res?.c || 0);
+    if (eventsFromEvents > 0) return { month: yyyymm, events: eventsFromEvents };
+  } catch (e) {}
+
+  // Step 3: direct feedback count (robust, no datetime parsing)
+  try {
+    const res2 = await env.DB
+      .prepare("SELECT COUNT(*) AS c FROM feedback WHERE site_id = ? AND substr(created_at,1,7) = ?")
+      .bind(siteId, yyyymm)
+      .first<{ c: number }>();
+    return { month: yyyymm, events: Number(res2?.c || 0) };
+  } catch (e) {
+    return { month: yyyymm, events: 0 };
+  }
+}
+
 // ---------- analytics helpers ----------
 async function computeSiteStats(
   env: Env,
@@ -1226,4 +2221,28 @@ async function computeSiteStats(
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
+}
+
+// ---------- org seats helpers ----------
+async function getOrgSeatsLimit(env: Env, orgId: string, planId: string): Promise<number | null> {
+  if (!env.DB) return null;
+  try {
+    const row = await env.DB.prepare('SELECT features_json FROM plans WHERE id = ?').bind(planId).first<{ features_json?: string }>();
+    const features = row?.features_json ? JSON.parse(row.features_json) : {};
+    const seats = features?.seats;
+    if (seats === 'custom' || seats === null || typeof seats === 'undefined') return null;
+    const n = Number(seats);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch { return null; }
+}
+
+async function getOrgMemberCount(env: Env, orgId: string): Promise<number> {
+  if (!env.DB) return 0;
+  try {
+    const row = await env.DB
+      .prepare("SELECT COUNT(*) AS c FROM org_members WHERE org_id = ? AND status IN ('pending','active')")
+      .bind(orgId)
+      .first<{ c: number }>();
+    return Number(row?.c || 0);
+  } catch { return 0; }
 }
