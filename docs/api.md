@@ -259,6 +259,7 @@ GET `/v1/sites/:id/summary?days=7`
 ## CORS & Security
 
 - CORS allowlisting per Site ID is the primary browser-side control. Only allowlisted origins can call feedback read/write endpoints successfully from the browser.
+- Preflight allows methods: GET, POST, PATCH, DELETE, OPTIONS. Allowed headers include `content-type`, `authorization`, and `x-fidbak-signature`.
 - Consider adding Turnstile/Recaptcha or rate limits on `POST /v1/sites` to reduce onboarding abuse.
 - `verifyToken` is returned from `POST /v1/sites` and reserved for future verification flows (e.g., email verification) before enabling a site.
 
@@ -325,6 +326,152 @@ POST `/v1/sites/:id/webhooks/:wid/delete`
   - Payload: `{ "type": "fidbak.feedback.v1", "data": { /* feedback row */ } }`
   - If a secret is set on the webhook, Fidbak includes `x-fidbak-signature: <hex>` where `<hex>` is `HMAC_SHA256(secret, rawBody)`.
   - Verify by computing HMAC of the exact raw body string and comparing (case‑insensitive hex).
+
+---
+
+## Plans (public-ish)
+
+GET `/v1/plans`
+
+- Purpose: List available plans from the database (source of truth for the dashboard).
+- Response 200:
+```json
+{ "plans": [ { "id": "pro", "name": "Pro", "monthly_event_limit": 10000, "price_id": "price_...", "features": {"sites": 3, "seats": 1} } ] }
+```
+
+---
+
+## Billing (Stripe)
+
+### Start Checkout (subscription)
+
+POST `/v1/billing/checkout`
+
+- Auth: Bearer token (Clerk)
+- Body:
+```json
+{ "planId": "pro" }
+```
+- Response 200:
+```json
+{ "url": "https://checkout.stripe.com/..." }
+```
+
+### Customer Portal
+
+GET `/v1/billing/portal`
+
+- Auth: Bearer token (Clerk)
+- Response 200: `{ "url": "https://billing.stripe.com/p/session/..." }`
+
+### Webhook (Stripe)
+
+POST `/v1/billing/webhook`
+
+- Verifies Stripe signature using HMAC-SHA256.
+- Handles subscription create/update/delete. Returns 200.
+
+---
+
+## Organization
+
+### Get current org
+
+GET `/v1/org`
+
+- Auth: Bearer token (Clerk)
+- Response 200:
+```json
+{
+  "id": "org_123",
+  "name": "Fidbak Team",
+  "plan_id": "pro",
+  "stripe_customer_id": null,
+  "created_at": "2025-09-24T20:55:10.234Z",
+  "price_id": null,
+  "subscription_status": "active",
+  "current_period_end": "2025-10-24T20:55:10.234Z",
+  "cancel_at": null,
+  "trial_end": null
+}
+```
+
+### Update org name
+
+PATCH `/v1/org`
+
+- Auth: Bearer token (Clerk)
+- Body:
+```json
+{ "name": "My Team" }
+```
+- Response 200: `{ "ok": true, "name": "My Team" }`
+
+---
+
+## Team Members (Org)
+
+### List members
+
+GET `/v1/org/members`
+
+- Auth: Bearer token (Clerk)
+- Response 200:
+```json
+{ "members": [ { "id": "m_1", "org_id": "org_123", "email": "a@b.com", "role": "admin", "status": "active", "invited_at": "...", "joined_at": "..." } ] }
+```
+
+### Invite member (email)
+
+POST `/v1/org/members/invite`
+
+- Auth: Bearer token (Clerk)
+- Body:
+```json
+{ "email": "user@example.com", "role": "member" }
+```
+- Response 200:
+```json
+{ "ok": true, "accept_url": "https://dash.example.com/accept-invite?token=..." }
+```
+- Notes:
+  - Generates a one-time invite token valid for ~7 days.
+  - If email is configured (`RESEND_API_KEY` + `INVITE_FROM_EMAIL`), an invite email is sent.
+
+### Pending invites (for signed-in user)
+
+GET `/v1/org/members/pending`
+
+- Auth: Bearer token (Clerk)
+- Response 200:
+```json
+{ "invites": [ { "id": "m_2", "org_id": "org_123", "email": "me@example.com", "role": "member", "status": "pending", "invited_at": "...", "invite_token": "..." } ] }
+```
+
+### Accept invite by token (signed-in)
+
+GET `/v1/org/members/accept?token=...`
+
+- Auth: Bearer token (Clerk)
+- Response 200: `{ "ok": true }`
+- Errors: 400 `{ "ok": false, "error": "invalid_or_expired" }`
+
+### Accept latest pending invite (in-app)
+
+POST `/v1/org/members/accept`
+
+- Auth: Bearer token (Clerk)
+- Behavior: Finds the latest (most recent) non-expired pending invite for the user’s email and activates it.
+- Response 200: `{ "ok": true }`
+- Errors: 404 `{ "ok": false, "error": "no_pending" }`
+
+### Remove member
+
+POST `/v1/org/members/remove`
+
+- Auth: Bearer token (Clerk)
+- Body (one of): `{ "email": "user@example.com" }` or `{ "user_sub": "sub_123" }`
+- Response 200: `{ "ok": true }`
 
 ---
 
