@@ -1,0 +1,2 @@
+-- NO-OP: Rebuild not required in production and D1 disallows raw BEGIN TRANSACTION in migrations.
+-- This migration is intentionally empty to allow the migration ledger to advance safely.

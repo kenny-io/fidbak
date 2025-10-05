@@ -1,13 +1,70 @@
 // Welcome email using provided template (inline for Worker)
 function renderWelcomeHtml(firstName: string, ctaUrl: string, ctaText: string): string {
   const safe = firstName || 'there';
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Welcome to Fidbak</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb;"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px;"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);"><tr><td style="background:linear-gradient(135deg,#f97316 0%,#ea580c 100%);padding:40px 40px 30px;text-align:center;"><h1 style="margin:0;color:#ffffff;font-size:32px;font-weight:700;letter-spacing:-0.5px;">Fidbak</h1><p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">Lightweight customer feedback platform</p></td></tr><tr><td style="padding:40px;"><p style="margin:0 0 8px;color:#111827;font-size:16px;line-height:1.6;">Hi ${safe},</p><p style="margin:0 0 16px;color:#4b5563;font-size:16px;line-height:1.6;">I’m Kenny. Thanks for signing up for Fidbak.</p><p style="margin:0 0 16px;color:#4b5563;font-size:16px;line-height:1.6;">I started Fidbak to make feedback simple and useful so you can make better, user driven decisions for your product and business.</p><p style="margin:0 0 24px;color:#4b5563;font-size:16px;line-height:1.6;">Whether you are just exploring or ready to collect feedback on your site, I am glad you are here.</p><table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;"><tr><td style="background-color:#fef3c7;padding:20px;border-radius:8px;border-left:4px solid #f97316;"><p style="margin:0;color:#78350f;font-size:14px;line-height:1.5;">If you have any questions or need help with integrating Fidbak into your site, hit reply and I will get back to you. I read and answer every message myself.</p></td></tr></table>
-  <div style="text-align:center;margin:24px 0;">
-    <a href="${ctaUrl}" style="display:inline-block;background-color:#f97316;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">
-      ${ctaText}
-    </a>
-  </div>
-  <p style="margin:0 0 4px;color:#4b5563;font-size:16px;line-height:1.6;">Glad to have you with us.</p><br><p style="margin:0;color:#111827;font-size:16px;line-height:1.6;"><strong>Kenny</strong><br><span style="color:#6b7280;font-size:14px;">Founder, Fidbak</span></p></td></tr><tr><td style="padding:24px 40px;background-color:#f9fafb;border-top:1px solid #e5e7eb;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;line-height:1.5;">© 2025 Fidbak. All rights reserved.<br>You're receiving this because you created a Fidbak account.</p></td></tr></table></td></tr></table></body></html>`;
+  return `<!DOCTYPE html>
+  <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Welcome to Fidbak</title></head>
+  <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px;"><tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <tr><td style="background:linear-gradient(135deg,#f97316 0%,#ea580c 100%);padding:40px 40px 30px;text-align:center;">
+          <h1 style="margin:0;color:#ffffff;font-size:32px;font-weight:700;letter-spacing:-0.5px;">Fidbak</h1>
+          <p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">Lightweight customer feedback platform</p>
+        </td></tr>
+        <tr><td style="padding:40px;">
+          <p style="margin:0 0 8px;color:#111827;font-size:16px;line-height:1.6;">Hi ${safe},</p>
+          <p style="margin:0 0 16px;color:#4b5563;font-size:16px;line-height:1.6;">Thanks for signing up for Fidbak.</p>
+          <div style="text-align:center;margin:24px 0;">
+            <a href="${ctaUrl}" style="display:inline-block;background-color:#f97316;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">${ctaText}</a>
+          </div>
+          <p style="margin:0 0 4px;color:#4b5563;font-size:16px;line-height:1.6;">Glad to have you with us.</p>
+          <br/>
+          <p style="margin:0;color:#111827;font-size:16px;line-height:1.6;"><strong>Kenny</strong><br><span style="color:#6b7280;font-size:14px;">Founder, Fidbak</span></p>
+        </td></tr>
+        <tr><td style="padding:24px 40px;background-color:#f9fafb;border-top:1px solid #e5e7eb;">
+          <p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;line-height:1.5;">© 2025 Fidbak. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr></table>
+  </body></html>`;
+}
+
+// ---------- Stripe price caching (24h) ----------
+async function fetchStripePriceWithCache(env: Env, priceId: string | null | undefined): Promise<{ unit_amount: number | null; currency: string | null; interval: string | null } | null> {
+  if (!priceId) return null;
+  if (!env.DB) return null;
+  try {
+    await env.DB.prepare('CREATE TABLE IF NOT EXISTS stripe_price_cache (price_id TEXT PRIMARY KEY, unit_amount INTEGER, currency TEXT, interval TEXT, cached_at TEXT)').run();
+  } catch {}
+  // Try cache first
+  try {
+    const row = await env.DB.prepare('SELECT unit_amount, currency, interval, cached_at FROM stripe_price_cache WHERE price_id = ?').bind(priceId).first<{ unit_amount?: number | null; currency?: string | null; interval?: string | null; cached_at?: string }>();
+    if (row) {
+      const cachedAt = row.cached_at ? Date.parse(row.cached_at) : 0;
+      const ageMs = Date.now() - (Number.isFinite(cachedAt) ? cachedAt : 0);
+      if (ageMs < 24 * 60 * 60 * 1000) {
+        return { unit_amount: row.unit_amount ?? null, currency: row.currency ?? null, interval: row.interval ?? null };
+      }
+    }
+  } catch {}
+  // Fetch live from Stripe
+  if (!env.STRIPE_SECRET_KEY) return null;
+  try {
+    const resp = await fetch(`https://api.stripe.com/v1/prices/${encodeURIComponent(priceId)}`, {
+      headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
+    });
+    if (!resp.ok) return null;
+    const data: any = await resp.json();
+    const unit_amount = typeof data.unit_amount === 'number' ? data.unit_amount : null;
+    const currency = typeof data.currency === 'string' ? data.currency : null;
+    const interval = data?.recurring?.interval || null;
+    try {
+      await env.DB.prepare('INSERT INTO stripe_price_cache (price_id, unit_amount, currency, interval, cached_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(price_id) DO UPDATE SET unit_amount=excluded.unit_amount, currency=excluded.currency, interval=excluded.interval, cached_at=excluded.cached_at')
+        .bind(priceId, unit_amount, currency, interval, new Date().toISOString()).run();
+    } catch {}
+    return { unit_amount, currency, interval };
+  } catch {
+    return null;
+  }
 }
 
 // ---------- plan features helpers ----------
@@ -85,6 +142,28 @@ async function sendWelcomeEmail(env: Env, to: string, firstName: string, ctaUrl:
     }
   } catch {}
 }
+
+// Contact Sales email helper
+async function sendContactEmail(env: Env, payload: { fromEmail: string; fromName?: string; message: string; subject?: string }): Promise<void> {
+  if (!env.RESEND_API_KEY || !env.INVITE_FROM_EMAIL) return;
+  const to = 'kenny@fidbak.dev';
+  const subject = (payload.subject || 'Fidbak: Contact Sales').trim();
+  const safeFrom = payload.fromEmail || 'unknown@fidbak.dev';
+  const fromName = (payload.fromName || 'Fidbak user').trim();
+  const html = `\n    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111">\n      <h2 style=\"margin:0 0 12px\">Contact Sales</h2>\n      <p><strong>From:</strong> ${fromName} &lt;${safeFrom}&gt;</p>\n      <pre style=\"white-space:pre-wrap;background:#f8f9fa;border:1px solid #eee;border-radius:8px;padding:12px;margin-top:12px\">${payload.message}</pre>\n    </div>\n  `;
+  const text = `Contact Sales\nFrom: ${fromName} <${safeFrom}>\n\n${payload.message}`;
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: env.INVITE_FROM_EMAIL, to: [to], subject, html, text, reply_to: safeFrom }),
+  });
+  try {
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      console.error('Resend contact email failed', resp.status, body);
+    }
+  } catch {}
+}
 export interface Env {
   DB?: D1Database; // optional binding
   FIDBAK_DASHBOARD_BASE?: string; // used in Slack footer link
@@ -156,13 +235,15 @@ async function sendInviteEmail(env: Env, to: string, orgName: string, acceptUrl:
 }
 
 // Shared helper: POST to Stripe and return JSON or throw with detailed error
-async function stripePost(env: Env, url: string, body: URLSearchParams): Promise<any> {
+async function stripePost(env: Env, url: string, body: URLSearchParams, idempotencyKey?: string): Promise<any> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers,
     body,
   });
   const text = await res.text();
@@ -244,7 +325,7 @@ async function getOrCreateStripeCustomer(env: Env, org: any, authUser: { email?:
   return customerId;
 }
 
-async function createStripeCheckoutSession(env: Env, args: { customer?: string; customer_email?: string; priceId: string; mode: 'subscription'; success_url: string; cancel_url: string }) {
+async function createStripeCheckoutSession(env: Env, args: { customer?: string; customer_email?: string; priceId: string; mode: 'subscription'; success_url: string; cancel_url: string }, idem?: string) {
   const body = new URLSearchParams();
   body.set('mode', args.mode);
   if (args.customer) body.set('customer', args.customer);
@@ -253,7 +334,7 @@ async function createStripeCheckoutSession(env: Env, args: { customer?: string; 
   body.set('line_items[0][quantity]', '1');
   body.set('success_url', args.success_url);
   body.set('cancel_url', args.cancel_url);
-  const json = await stripePost(env, 'https://api.stripe.com/v1/checkout/sessions', body);
+  const json = await stripePost(env, 'https://api.stripe.com/v1/checkout/sessions', body, idem);
   return json;
 }
 
@@ -603,17 +684,30 @@ export default {
         const planId = String(body?.planId || 'pro');
         const priceId = planToPrice(env, planId);
         if (!priceId) return json({ error: 'Unsupported plan' }, { status: 400 }, reqOrigin || '*');
-
-        const { org } = await getOrCreateOrgForOwner(env, authUser);
+        // Owner-only: resolve org owned by this user (create if missing)
+        let org = env.DB ? await env.DB.prepare('SELECT * FROM orgs WHERE owner_sub = ? LIMIT 1').bind(authUser.sub).first<any>() : null;
+        if (!org) {
+          const created = await getOrCreateOrgForOwner(env, authUser);
+          org = created.org;
+        }
+        if (!org) return json({ error: 'forbidden' }, { status: 403 }, reqOrigin || '*');
+        const emailMatch = authUser.email && org.owner_email && String(org.owner_email).toLowerCase() === String(authUser.email).toLowerCase();
+        const subMatch = String(org.owner_sub || '') === String(authUser.sub || '');
+        if (!subMatch && !emailMatch) return json({ error: 'forbidden' }, { status: 403 }, reqOrigin || '*');
+        // Backfill owner_sub when missing but email matches
+        if (!subMatch && emailMatch && env.DB) {
+          try { await env.DB.prepare('UPDATE orgs SET owner_sub = ? WHERE id = ?').bind(authUser.sub, org.id).run(); } catch {}
+        }
         let customerId = await getOrCreateStripeCustomer(env, org, authUser);
         try {
+          const idem = `chk_${org.id}_${priceId}`; // coarse idempotency per org+price
           const session = await createStripeCheckoutSession(env, {
             customer: customerId,
             priceId,
             mode: 'subscription',
             success_url: (env.FIDBAK_DASHBOARD_BASE || reqOrigin || '') + '/billing?success=1',
             cancel_url: (env.FIDBAK_DASHBOARD_BASE || reqOrigin || '') + '/billing?canceled=1',
-          });
+          }, idem);
           return json({ url: session?.url || null }, {}, reqOrigin || '*');
         } catch (e: any) {
           const msg = String(e?.message || e || '');
@@ -623,13 +717,14 @@ export default {
               await env.DB.prepare('UPDATE orgs SET stripe_customer_id = NULL WHERE id = ?').bind(org.id).run();
             }
             customerId = await getOrCreateStripeCustomer(env, { ...org, stripe_customer_id: null }, authUser);
+            const idem2 = `chk_${org.id}_${priceId}_r`;
             const session = await createStripeCheckoutSession(env, {
               customer: customerId,
               priceId,
               mode: 'subscription',
               success_url: (env.FIDBAK_DASHBOARD_BASE || reqOrigin || '') + '/billing?success=1',
               cancel_url: (env.FIDBAK_DASHBOARD_BASE || reqOrigin || '') + '/billing?canceled=1',
-            });
+            }, idem2);
             return json({ url: session?.url || null }, {}, reqOrigin || '*');
           }
           throw e;
@@ -645,8 +740,13 @@ export default {
         const authUser = await getAuth(env, request);
         if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
         if (!env.STRIPE_SECRET_KEY) return json({ error: 'Billing not configured' }, { status: 501 }, reqOrigin || '*');
-
-        const { org } = await getOrCreateOrgForOwner(env, authUser);
+        // Owner-only portal access
+        let org = env.DB ? await env.DB.prepare('SELECT * FROM orgs WHERE owner_sub = ? LIMIT 1').bind(authUser.sub).first<any>() : null;
+        if (!org) {
+          const created = await getOrCreateOrgForOwner(env, authUser);
+          org = created.org;
+        }
+        if (!org || String(org.owner_sub) !== String(authUser.sub)) return json({ error: 'forbidden' }, { status: 403 }, reqOrigin || '*');
         const customerId = await getOrCreateStripeCustomer(env, org, authUser);
         const session = await createStripePortalSession(env, customerId, env.STRIPE_PORTAL_RETURN_URL || (env.FIDBAK_DASHBOARD_BASE || reqOrigin || '')); 
         return json({ url: session?.url || null }, {}, reqOrigin || '*');
@@ -686,8 +786,38 @@ export default {
       }
       let event: any = {};
       try { event = JSON.parse(raw); } catch { return new Response('bad request', { status: 400 }); }
+      // Idempotency: record processed event IDs
+      try {
+        if (env.DB && event?.id) {
+          await env.DB.prepare('CREATE TABLE IF NOT EXISTS stripe_events (id TEXT PRIMARY KEY, received_at TEXT)').run();
+          const exists = await env.DB.prepare('SELECT id FROM stripe_events WHERE id = ?').bind(event.id).first<any>();
+          if (exists && exists.id) return new Response('ok', { status: 200 });
+          await env.DB.prepare('INSERT INTO stripe_events (id, received_at) VALUES (?, ?)').bind(event.id, new Date().toISOString()).run();
+        }
+      } catch {}
       try { await handleStripeEvent(env, event); } catch {}
       return new Response('ok', { status: 200 });
+    }
+
+    // POST /v1/support/contact { fromEmail, fromName?, message, subject? }
+    if (url.pathname === '/v1/support/contact' && request.method === 'POST') {
+      const { origin: reqOrigin } = cors(request);
+      const authUser = await getAuth(env, request);
+      if (!authUser) return new Response('Unauthorized', { status: 401, headers: { 'access-control-allow-origin': reqOrigin || '*' } });
+      try {
+        let body: any = {};
+        try { body = await request.json(); } catch {}
+        const fromEmail = String(body?.fromEmail || authUser.email || '').trim();
+        const fromName = String(body?.fromName || '').trim();
+        const message = String(body?.message || '').trim();
+        const subject = typeof body?.subject === 'string' ? body.subject : undefined;
+        if (!fromEmail || !message) return json({ ok: false, error: 'missing_fields' }, { status: 400 }, reqOrigin || '*');
+        // fire-and-forget
+        ctx.waitUntil(sendContactEmail(env, { fromEmail, fromName, message, subject }));
+        return json({ ok: true }, {}, reqOrigin || '*');
+      } catch (e: any) {
+        return json({ ok: false, error: String(e?.message || e || 'error') }, { status: 500 }, reqOrigin || '*');
+      }
     }
 
     if (url.pathname === '/v1/org' && request.method === 'GET') {
@@ -742,7 +872,7 @@ export default {
       }
     }
 
-    // Public-ish plans listing (read-only) – DB is source of truth
+    // Public-ish plans listing (read-only) – DB is source of truth, with Stripe price info (24h cached)
     if (url.pathname === '/v1/plans' && request.method === 'GET') {
       const { origin: reqOrigin } = cors(request);
       if (!env.DB) return json({ plans: [] }, {}, reqOrigin || '*');
@@ -750,14 +880,19 @@ export default {
         const res = await env.DB
           .prepare('SELECT id, name, monthly_event_limit, stripe_price_id AS price_id, features_json FROM plans ORDER BY CASE id WHEN "free" THEN 0 WHEN "pro" THEN 1 WHEN "team" THEN 2 WHEN "enterprise" THEN 3 ELSE 99 END, name')
           .all<{ id: string; name?: string; monthly_event_limit?: number | null; price_id?: string | null; features_json?: string | null }>();
-        const plans = (res.results || []).map((p: any) => ({
-          id: p.id as string,
-          name: (p.name || p.id) as string,
-          monthly_event_limit: p.monthly_event_limit ?? null,
-          price_id: p.price_id || null,
-          features: (() => { try { return p.features_json ? JSON.parse(p.features_json) : {}; } catch { return {}; } })(),
+        const raw = (res.results || []) as any[];
+        const withStripe = await Promise.all(raw.map(async (p) => {
+          const stripe_price = await fetchStripePriceWithCache(env, p.price_id || null).catch(() => null);
+          return {
+            id: p.id as string,
+            name: (p.name || p.id) as string,
+            monthly_event_limit: p.monthly_event_limit ?? null,
+            price_id: p.price_id || null,
+            features: (() => { try { return p.features_json ? JSON.parse(p.features_json) : {}; } catch { return {}; } })(),
+            stripe_price,
+          };
         }));
-        return json({ plans }, {}, reqOrigin || '*');
+        return json({ plans: withStripe }, {}, reqOrigin || '*');
       } catch (e: any) {
         return json({ error: String(e?.message || e) }, { status: 500 }, reqOrigin || '*');
       }

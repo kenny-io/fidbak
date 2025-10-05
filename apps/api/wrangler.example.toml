@@ -2,44 +2,68 @@ name = "fidbak-api"
 main = "src/index.ts"
 compatibility_date = "2024-09-01"
 
-# D1 database binding (fill with your database details)
+preview_urls = true
+
+# D1 database binding (use a real database_id in production deploys)
 [[d1_databases]]
 binding = "DB"
-database_name = "<YOUR_DB_NAME>"
-database_id = "<REDACTED_DB_ID>"
-
+database_name = "fidbakprod"
+database_id = "745c56c8-1b28-4c55-a7b7-8333671687d3"
 [observability]
 enabled = true
 
-# IMPORTANT:
-# Keep real secrets in Cloudflare Dashboard Vars or Wrangler Secrets.
-# Do NOT commit sensitive values here.
+[env.production]
+name = "fidbak-api-production"
+workers_dev = true
 
-# Production environment (uses dashboard-managed vars)
-[env.production.vars]
-CLERK_ISSUER = "<REDACTED_ISSUER>"
-CLERK_JWKS_URL = "<REDACTED_JWKS_URL>"
-# CLERK_AUDIENCE = "<OPTIONAL_AUDIENCE>"
-FIDBAK_DASH_ORIGIN = "https://your-dashboard.example.com"
-FIDBAK_DASHBOARD_BASE = "https://your-dashboard.example.com"
+[env.production.vars] 
+name = "fidbak-api"      # same as dashboard service
+CLERK_ISSUER = "{{ CLERK_ISSUER }}"
+CLERK_JWKS_URL = "{{ CLERK_JWKS_URL }}"
+FIDBAK_STRICT_CORS = "{{ FIDBAK_STRICT_CORS }}" 
+FIDBAK_DASH_ORIGIN = "{{ FIDBAK_DASH_ORIGIN }}" 
+FIDBAK_DASHBOARD_BASE = "{{ FIDBAK_DASHBOARD_BASE }}"
+# CLERK DEV ISSUER
+CLERK_ISSUER_2 = "{{ CLERK_ISSUER_2 }}"
+CLERK_JWKS_URL_2 = "{{ CLERK_JWKS_URL_2 }}"
 
-[[env.production.d1_databases]]
-binding = "DB"
-database_name = "<YOUR_DB_NAME>"
-database_id = "<REDACTED_DB_ID>"
+# BILLING
+STRIPE_SECRET_KEY="{{ STRIPE_SECRET_KEY }}" 
+STRIPE_WEBHOOK_SECRET="{{ STRIPE_WEBHOOK_SECRET }}" 
+STRIPE_PRICE_PRO="{{ STRIPE_PRICE_PRO }}" 
+STRIPE_PRICE_TEAM="{{ STRIPE_PRICE_TEAM }}" 
+STRIPE_PRICE_ENTERPRISE="{{ STRIPE_PRICE_ENTERPRISE }}" 
+STRIPE_PORTAL_RETURN_URL="{{ STRIPE_PORTAL_RETURN_URL }}"
+FIDBAK_BILLING_GRACE_DAYS="{{ FIDBAK_BILLING_GRACE_DAYS }}"
+FIDBAK_ENFORCE_QUOTAS="{{ FIDBAK_ENFORCE_QUOTAS }}"
 
-# Local environment (for dev)
+# EMAIL
+RESEND_API_KEY="{{ RESEND_API_KEY }}"
+INVITE_FROM_EMAIL="{{ INVITE_FROM_EMAIL }}"
+DASH_BASE_URL="{{ DASH_BASE_URL }}"
+
+# Local environment for safe dev deploys that won't touch preview
 [env.local]
-name = "fidbak-api-local"  # deploy with: wrangler deploy --env local
+name = "fidbak-api-local" # separate worker name; deploy with: wrangler deploy --env local
+workers_dev = true
 
 [env.local.vars]
-CLERK_ISSUER = "<REDACTED_ISSUER>"
-CLERK_JWKS_URL = "<REDACTED_JWKS_URL>"
-# CLERK_AUDIENCE = "<OPTIONAL_AUDIENCE>"
-FIDBAK_DASH_ORIGIN = "http://localhost:8080"
-FIDBAK_DASHBOARD_BASE = "http://localhost:8080"
+CLERK_ISSUER = "{{ CLERK_ISSUER }}"
+CLERK_JWKS_URL = "{{ CLERK_JWKS_URL }}"
+FIDBAK_STRICT_CORS = "{{ FIDBAK_STRICT_CORS }}" 
+FIDBAK_DASH_ORIGIN = "{{ FIDBAK_DASH_ORIGIN }}" 
+FIDBAK_DASHBOARD_BASE = "{{ FIDBAK_DASHBOARD_BASE }}"
+FIDBAK_DEV_AUTOMIGRATE = "{{ FIDBAK_DEV_AUTOMIGRATE }}"
 
-[[env.local.d1_databases]]
-binding = "DB"
-database_name = "<YOUR_DB_NAME>"
-database_id = "<REDACTED_DB_ID>"
+STRIPE_SECRET_KEY="{{ STRIPE_SECRET_KEY }}" 
+STRIPE_WEBHOOK_SECRET="{{ STRIPE_WEBHOOK_SECRET }}" 
+STRIPE_PRICE_PRO="{{ STRIPE_PRICE_PRO }}" 
+STRIPE_PRICE_TEAM="{{ STRIPE_PRICE_TEAM }}" 
+STRIPE_PRICE_ENTERPRISE="{{ STRIPE_PRICE_ENTERPRISE }}" 
+STRIPE_PORTAL_RETURN_URL="{{ STRIPE_PORTAL_RETURN_URL }}"
+FIDBAK_BILLING_GRACE_DAYS="{{ FIDBAK_BILLING_GRACE_DAYS }}"
+FIDBAK_ENFORCE_QUOTAS="{{ FIDBAK_ENFORCE_QUOTAS }}"
+
+RESEND_API_KEY="{{ RESEND_API_KEY }}"
+INVITE_FROM_EMAIL="{{ INVITE_FROM_EMAIL }}"
+DASH_BASE_URL="{{ DASH_BASE_URL }}"
