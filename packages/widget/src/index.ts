@@ -35,9 +35,27 @@ function ensureContainer(): HTMLElement {
   return el;
 }
 
+function parseTheme() {
+  const raw = (STATE.options?.theme || 'auto') as string;
+  // Accept: 'light' | 'dark' | 'auto' | palette | 'mode:palette'
+  let mode: 'light' | 'dark' | 'auto' = 'auto';
+  let palette = 'emerald';
+  if (raw.includes(':')) {
+    const [m, p] = raw.split(':', 2);
+    if (m === 'light' || m === 'dark' || m === 'auto') mode = m;
+    if (p) palette = p as any;
+  } else if (raw === 'light' || raw === 'dark' || raw === 'auto') {
+    mode = raw;
+  } else {
+    // treat raw as palette shorthand, with auto mode
+    palette = raw as any;
+  }
+  return { mode, palette } as const;
+}
+
 function resolveTheme(): 'light' | 'dark' {
-  const opt = STATE.options?.theme || 'auto';
-  if (opt === 'light' || opt === 'dark') return opt;
+  const { mode } = parseTheme();
+  if (mode === 'light' || mode === 'dark') return mode;
   const prefersDark = matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
   return prefersDark ? 'dark' : 'light';
 }
@@ -64,6 +82,15 @@ function renderFAB() {
   const root = ensureContainer();
   applyPosition(root);
   root.innerHTML = '';
+  const variant = STATE.options?.fabVariant || 'icon';
+  if (variant === 'text') {
+    root.appendChild(renderTextFAB());
+  } else {
+    root.appendChild(renderIconFAB());
+  }
+}
+
+function renderIconFAB() {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.setAttribute('aria-label', 'Send feedback');
@@ -81,7 +108,49 @@ function renderFAB() {
   btn.style.fontSize = '24px';
   btn.textContent = '✱';
   btn.addEventListener('click', () => openModal(btn));
-  root.appendChild(btn);
+  return btn;
+}
+
+function renderTextFAB() {
+  const theme = resolveTheme();
+  const v = themeVars();
+  const wrap = document.createElement('button');
+  wrap.type = 'button';
+  wrap.setAttribute('aria-label', 'Send feedback');
+  wrap.style.display = 'inline-flex';
+  wrap.style.alignItems = 'center';
+  wrap.style.gap = '8px';
+  wrap.style.border = '1px solid ' + (theme === 'dark' ? v.colors.borderDark : v.colors.borderLight);
+  wrap.style.background = theme === 'dark' ? '#111' : '#f3f4f6';
+  wrap.style.color = theme === 'dark' ? v.colors.textDark : v.colors.textLight;
+  wrap.style.padding = '6px 10px 6px 8px';
+  wrap.style.borderRadius = '9999px';
+  wrap.style.cursor = 'pointer';
+  wrap.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+  wrap.style.fontFamily = v.fontFamily;
+
+  const icon = document.createElement('span');
+  icon.textContent = '💬';
+  icon.style.fontSize = '16px';
+
+  const label = document.createElement('span');
+  label.textContent = (STATE.options?.fabText || 'Feedback');
+  label.style.fontSize = '14px';
+  label.style.fontWeight = '600';
+
+  const hotkey = document.createElement('span');
+  hotkey.textContent = (STATE.options?.hotkeyLabel || 'F');
+  hotkey.style.fontSize = '12px';
+  hotkey.style.padding = '2px 6px';
+  hotkey.style.borderRadius = '8px';
+  hotkey.style.background = theme === 'dark' ? '#1f2937' : '#e5e7eb';
+  hotkey.style.color = theme === 'dark' ? '#d1d5db' : '#111827';
+
+  wrap.appendChild(icon);
+  wrap.appendChild(label);
+  wrap.appendChild(hotkey);
+  wrap.addEventListener('click', () => openModal(wrap));
+  return wrap;
 }
 
 function openModal(invoker?: HTMLElement) {
@@ -98,17 +167,16 @@ function openModal(invoker?: HTMLElement) {
   overlay.style.inset = '0';
   const v = themeVars();
   overlay.style.background = v.colors.overlay;
-  overlay.style.display = 'flex';
-  overlay.style.alignItems = 'center';
-  overlay.style.justifyContent = 'center';
-  overlay.style.padding = '16px';
+  overlay.style.display = 'block';
+  overlay.style.padding = '0';
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) closeModal(overlay);
   });
 
   const card = document.createElement('div');
-  // Increase width by >=30% (from 420px -> 560px)
-  card.style.width = 'min(92vw, 560px)';
+  // Reduce width by ~30% for a more compact modal (from 560px -> 392px)
+  card.style.width = 'min(92vw, 392px)';
+  card.style.position = 'fixed';
   const theme = resolveTheme();
   card.style.background = theme === 'dark' ? v.colors.cardBgDark : v.colors.cardBgLight;
   card.style.borderRadius = `${v.radiusCard}px`;
@@ -117,9 +185,33 @@ function openModal(invoker?: HTMLElement) {
   card.style.color = theme === 'dark' ? v.colors.textDark : v.colors.textLight;
   card.style.fontFamily = v.fontFamily;
   card.style.boxSizing = 'border-box';
-  card.style.maxWidth = '560px';
+  card.style.maxWidth = '392px';
   card.style.maxHeight = '90vh';
   card.style.overflow = 'auto';
+
+  // Place the card just above the FAB based on configured position
+  const gap = 12; // space between card and fab
+  const fabSize = v.fabSize;
+  const margin = 16; // container margin used in applyPosition
+  const pos = STATE.options?.position || 'br';
+  // reset
+  card.style.top = '';
+  card.style.bottom = '';
+  card.style.left = '';
+  card.style.right = '';
+  if (pos === 'tl') {
+    card.style.top = `${margin + fabSize + gap}px`;
+    card.style.left = `${margin}px`;
+  } else if (pos === 'tr') {
+    card.style.top = `${margin + fabSize + gap}px`;
+    card.style.right = `${margin}px`;
+  } else if (pos === 'bl') {
+    card.style.bottom = `${margin + fabSize + gap}px`;
+    card.style.left = `${margin}px`;
+  } else {
+    card.style.bottom = `${margin + fabSize + gap}px`;
+    card.style.right = `${margin}px`;
+  }
 
   // Header with title and close
   const header = document.createElement('div');
@@ -181,6 +273,10 @@ function openModal(invoker?: HTMLElement) {
   up.addEventListener('click', () => {
     STATE.currentRating = 'up';
     selectThumb(up, down, theme, 'up');
+    // Hide details when experience is positive
+    try {
+      toggleDetails(false);
+    } catch {}
   });
 
   const down = document.createElement('button');
@@ -191,6 +287,10 @@ function openModal(invoker?: HTMLElement) {
   down.addEventListener('click', () => {
     STATE.currentRating = 'down';
     selectThumb(down, up, theme, 'down');
+    // Show details when experience is negative
+    try {
+      toggleDetails(true);
+    } catch {}
   });
 
   const commentLabel = document.createElement('div');
@@ -202,7 +302,7 @@ function openModal(invoker?: HTMLElement) {
   comment.rows = 4;
   comment.placeholder = 'Tell us more (optional)';
   comment.style.width = '100%';
-  comment.style.background = theme === 'dark' ? '#0f0f0f' : '#fff';
+  comment.style.background = theme === 'dark' ? v.colors.inputBgDark : v.colors.inputBgLight;
   comment.style.color = theme === 'dark' ? v.colors.textDark : v.colors.textLight;
   comment.style.border = '1px solid ' + (theme === 'dark' ? v.colors.borderDark : v.colors.borderLight);
   comment.style.borderRadius = `${v.radiusInput}px`;
@@ -229,36 +329,19 @@ function openModal(invoker?: HTMLElement) {
     counter.textContent = `${comment.value.length}/500`;
   });
 
-  const emailLabel = document.createElement('div');
-  emailLabel.innerHTML = 'Name / Email <span style="color:#9ca3af">(optional)</span>';
-  emailLabel.style.fontSize = '14px';
-  emailLabel.style.margin = '8px 0 6px 0';
+  // Hide details by default; reveal only on thumbs down
+  function toggleDetails(show: boolean) {
+    const disp = show ? '' : 'none';
+    commentLabel.style.display = disp;
+    comment.style.display = disp;
+    counter.style.display = disp;
+    if (show) {
+      setTimeout(() => comment.focus(), 0);
+    }
+  }
+  toggleDetails(false);
 
-  const email = document.createElement('input');
-  email.type = 'email';
-  email.placeholder = 'Name / Email (optional)';
-  email.style.width = '100%';
-  email.style.marginTop = '8px';
-  email.style.background = theme === 'dark' ? '#0f0f0f' : '#fff';
-  email.style.color = theme === 'dark' ? v.colors.textDark : v.colors.textLight;
-  email.style.border = '1px solid ' + (theme === 'dark' ? v.colors.borderDark : v.colors.borderLight);
-  email.style.borderRadius = `${v.radiusInput}px`;
-  email.style.padding = '10px 12px';
-  email.style.boxSizing = 'border-box';
-  email.style.maxWidth = '100%';
-  email.style.outline = 'none';
-  email.addEventListener('focus', () => {
-    email.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.35)';
-  });
-  email.addEventListener('blur', () => {
-    email.style.boxShadow = 'none';
-  });
-
-  const emailHelp = document.createElement('div');
-  emailHelp.textContent = "We'll only use this to follow up on your feedback";
-  emailHelp.style.color = '#9ca3af';
-  emailHelp.style.fontSize = '12px';
-  emailHelp.style.marginTop = '6px';
+  // removed Name/Email field
 
   const actions = document.createElement('div');
   actions.style.display = 'flex';
@@ -329,8 +412,10 @@ function openModal(invoker?: HTMLElement) {
       const payload: FeedbackPayload = {
         rating,
         comment: comment.value.trim() || undefined,
-        email: email.value.trim() || undefined,
-      } as any; // filled by sendFeedback using page context
+        context: {
+          // filled by sendFeedback using page context
+        },
+      } as any;
       dlog('submit', { rating });
       await sendFeedback(payload as any);
       dlog('submit success');
@@ -352,9 +437,6 @@ function openModal(invoker?: HTMLElement) {
   card.appendChild(commentLabel);
   card.appendChild(comment);
   card.appendChild(counter);
-  card.appendChild(emailLabel);
-  card.appendChild(email);
-  card.appendChild(emailHelp);
   card.appendChild(actions);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
@@ -426,46 +508,53 @@ export default fidbak;
 
 function themeVars() {
   const o = (STATE.options?.themeOverrides || {}) as ThemeOverrides;
+  const { palette } = parseTheme();
+  const p = getThemeSpec(String(palette));
   const colors = {
+    // Neutrals for overall modal and controls (keep overlay neutral so host page isn't tinted)
     overlay: o.colors?.overlay || 'rgba(0,0,0,0.4)',
-    cardBgLight: o.colors?.cardBgLight || '#fff',
-    cardBgDark: o.colors?.cardBgDark || '#111',
-    textLight: o.colors?.textLight || '#111',
-    textDark: o.colors?.textDark || '#f2f2f2',
-    borderLight: o.colors?.borderLight || '#e5e7eb',
-    borderDark: o.colors?.borderDark || '#374151',
-    focusRing: o.colors?.focusRing || 'rgba(59,130,246,0.35)',
-    // Defaults to green intent for primary actions
-    primaryStart: o.colors?.primaryStart || '#22c55e',
-    primaryEnd: o.colors?.primaryEnd || '#16a34a',
-    primaryText: o.colors?.primaryText || '#052e16',
-    ghostBorderLight: o.colors?.ghostBorderLight || (o.colors?.borderLight || '#e5e7eb'),
-    ghostBorderDark: o.colors?.ghostBorderDark || (o.colors?.borderDark || '#374151'),
-    fabBgLight: o.colors?.fabBgLight || '#111',
-    fabBgDark: o.colors?.fabBgDark || '#111',
-    fabTextLight: o.colors?.fabTextLight || '#fff',
-    fabTextDark: o.colors?.fabTextDark || '#fff',
-    // Send pill (overrides default emerald tints)
-    sendBtnBgLight: o.colors?.sendBtnBgLight,
-    sendBtnBgDark: o.colors?.sendBtnBgDark,
-    sendBtnBorderLight: o.colors?.sendBtnBorderLight,
-    sendBtnBorderDark: o.colors?.sendBtnBorderDark,
-    sendBtnTextLight: o.colors?.sendBtnTextLight,
-    sendBtnTextDark: o.colors?.sendBtnTextDark,
-    // Cancel pill (overrides default rose tints)
-    cancelBtnBgLight: o.colors?.cancelBtnBgLight,
-    cancelBtnBgDark: o.colors?.cancelBtnBgDark,
-    cancelBtnBorderLight: o.colors?.cancelBtnBorderLight,
-    cancelBtnBorderDark: o.colors?.cancelBtnBorderDark,
-    cancelBtnTextLight: o.colors?.cancelBtnTextLight,
-    cancelBtnTextDark: o.colors?.cancelBtnTextDark,
-    // Thumb intent overrides
-    thumbUpBgLight: o.colors?.thumbUpBgLight,
-    thumbUpBgDark: o.colors?.thumbUpBgDark,
-    thumbUpBorder: o.colors?.thumbUpBorder,
-    thumbDownBgLight: o.colors?.thumbDownBgLight,
-    thumbDownBgDark: o.colors?.thumbDownBgDark,
-    thumbDownBorder: o.colors?.thumbDownBorder,
+    cardBgLight: o.colors?.cardBgLight || p.cardBgLight,
+    cardBgDark: o.colors?.cardBgDark || p.cardBgDark,
+    textLight: o.colors?.textLight || p.textLight,
+    textDark: o.colors?.textDark || p.textDark,
+    borderLight: o.colors?.borderLight || p.borderLight,
+    borderDark: o.colors?.borderDark || p.borderDark,
+    focusRing: o.colors?.focusRing || p.focusRing,
+    // Inputs
+    inputBgLight: (o.colors as any)?.inputBgLight || p.inputBgLight,
+    inputBgDark: (o.colors as any)?.inputBgDark || p.inputBgDark,
+    // Primary accents
+    primaryStart: o.colors?.primaryStart || p.primaryStart,
+    primaryEnd: o.colors?.primaryEnd || p.primaryEnd,
+    primaryText: o.colors?.primaryText || p.primaryText,
+    // Button/fab defaults
+    ghostBorderLight: o.colors?.ghostBorderLight || (o.colors?.borderLight || p.ghostBorderLight),
+    ghostBorderDark: o.colors?.ghostBorderDark || (o.colors?.borderDark || p.ghostBorderDark),
+    fabBgLight: o.colors?.fabBgLight || p.fabBgLight,
+    fabBgDark: o.colors?.fabBgDark || p.fabBgDark,
+    fabTextLight: o.colors?.fabTextLight || p.fabTextLight,
+    fabTextDark: o.colors?.fabTextDark || p.fabTextDark,
+    // Send pill
+    sendBtnBgLight: o.colors?.sendBtnBgLight || p.sendBtnBgLight,
+    sendBtnBgDark: o.colors?.sendBtnBgDark || p.sendBtnBgDark,
+    sendBtnBorderLight: o.colors?.sendBtnBorderLight || p.sendBtnBorderLight,
+    sendBtnBorderDark: o.colors?.sendBtnBorderDark || p.sendBtnBorderDark,
+    sendBtnTextLight: o.colors?.sendBtnTextLight || p.sendBtnTextLight,
+    sendBtnTextDark: o.colors?.sendBtnTextDark || p.sendBtnTextDark,
+    // Cancel pill (use palette-complementary defaults)
+    cancelBtnBgLight: o.colors?.cancelBtnBgLight || p.cancelBtnBgLight,
+    cancelBtnBgDark: o.colors?.cancelBtnBgDark || p.cancelBtnBgDark,
+    cancelBtnBorderLight: o.colors?.cancelBtnBorderLight || p.cancelBtnBorderLight,
+    cancelBtnBorderDark: o.colors?.cancelBtnBorderDark || p.cancelBtnBorderDark,
+    cancelBtnTextLight: o.colors?.cancelBtnTextLight || p.cancelBtnTextLight,
+    cancelBtnTextDark: o.colors?.cancelBtnTextDark || p.cancelBtnTextDark,
+    // Thumbs
+    thumbUpBgLight: o.colors?.thumbUpBgLight || p.thumbUpBgLight,
+    thumbUpBgDark: o.colors?.thumbUpBgDark || p.thumbUpBgDark,
+    thumbUpBorder: o.colors?.thumbUpBorder || p.thumbUpBorder,
+    thumbDownBgLight: o.colors?.thumbDownBgLight || p.thumbDownBgLight,
+    thumbDownBgDark: o.colors?.thumbDownBgDark || p.thumbDownBgDark,
+    thumbDownBorder: o.colors?.thumbDownBorder || p.thumbDownBorder,
   } as const;
   return {
     colors,
@@ -479,6 +568,132 @@ function themeVars() {
     cardPadding: Math.max(8, o.spacing?.cardPadding ?? 16),
     fabSize: Math.max(40, o.fab?.size ?? 56),
   } as const;
+}
+
+function getThemeSpec(name: string) {
+  // Each theme defines neutrals + accents to restyle the entire modal.
+  const spec: Record<string, any> = {
+    emerald: {
+      overlay: 'rgba(16,185,129,0.10)',
+      cardBgLight: '#f0fdf4', cardBgDark: '#052e16',
+      inputBgLight: '#ecfdf5', inputBgDark: '#064e3b',
+      textLight: '#052e16', textDark: '#d1fae5',
+      borderLight: '#bbf7d0', borderDark: '#14532d',
+      focusRing: 'rgba(16,185,129,0.45)',
+      primaryStart: '#22c55e', primaryEnd: '#16a34a', primaryText: '#052e16',
+      ghostBorderLight: '#bbf7d0', ghostBorderDark: '#166534',
+      fabBgLight: '#065f46', fabBgDark: '#10b981', fabTextLight: '#ecfdf5', fabTextDark: '#052e16',
+      sendBtnBgLight: '#ecfdf5', sendBtnBorderLight: '#86efac', sendBtnTextLight: '#065f46',
+      sendBtnBgDark: '#052e16', sendBtnBorderDark: '#34d399', sendBtnTextDark: '#86efac',
+      cancelBtnBgLight: '#fff1f2', cancelBtnBorderLight: '#fecdd3', cancelBtnTextLight: '#9f1239',
+      cancelBtnBgDark: '#4c0519', cancelBtnBorderDark: '#fb7185', cancelBtnTextDark: '#fecdd3',
+      thumbUpBgLight: '#ecfdf5', thumbUpBgDark: '#052e16', thumbUpBorder: '#34d399',
+      thumbDownBgLight: '#fff1f2', thumbDownBgDark: '#4c0519', thumbDownBorder: '#fb7185',
+    },
+    indigo: {
+      overlay: 'rgba(99,102,241,0.12)',
+      cardBgLight: '#eef2ff', cardBgDark: '#1e1b4b',
+      inputBgLight: '#eef2ff', inputBgDark: '#1e1b4b',
+      textLight: '#1e1b4b', textDark: '#e0e7ff',
+      borderLight: '#c7d2fe', borderDark: '#312e81',
+      focusRing: 'rgba(99,102,241,0.45)',
+      primaryStart: '#6366f1', primaryEnd: '#4f46e5', primaryText: '#1e1b4b',
+      ghostBorderLight: '#c7d2fe', ghostBorderDark: '#4338ca',
+      fabBgLight: '#3730a3', fabBgDark: '#818cf8', fabTextLight: '#eef2ff', fabTextDark: '#1e1b4b',
+      sendBtnBgLight: '#eef2ff', sendBtnBorderLight: '#bfdbfe', sendBtnTextLight: '#3730a3',
+      sendBtnBgDark: '#1e1b4b', sendBtnBorderDark: '#818cf8', sendBtnTextDark: '#c7d2fe',
+      cancelBtnBgLight: '#fef2f2', cancelBtnBorderLight: '#fecaca', cancelBtnTextLight: '#991b1b',
+      cancelBtnBgDark: '#7f1d1d', cancelBtnBorderDark: '#fca5a5', cancelBtnTextDark: '#fecaca',
+      thumbUpBgLight: '#eef2ff', thumbUpBgDark: '#1e1b4b', thumbUpBorder: '#818cf8',
+      thumbDownBgLight: '#fef2f2', thumbDownBgDark: '#7f1d1d', thumbDownBorder: '#fca5a5',
+    },
+    rose: {
+      overlay: 'rgba(244,63,94,0.12)',
+      cardBgLight: '#fff1f2', cardBgDark: '#4c0519',
+      inputBgLight: '#fff1f2', inputBgDark: '#4c0519',
+      textLight: '#4c0519', textDark: '#ffe4e6',
+      borderLight: '#fecdd3', borderDark: '#7f1d1d',
+      focusRing: 'rgba(244,63,94,0.45)',
+      primaryStart: '#f43f5e', primaryEnd: '#e11d48', primaryText: '#4c0519',
+      ghostBorderLight: '#fecdd3', ghostBorderDark: '#fb7185',
+      fabBgLight: '#9d174d', fabBgDark: '#fb7185', fabTextLight: '#ffe4e6', fabTextDark: '#4c0519',
+      sendBtnBgLight: '#fdf2f8', sendBtnBorderLight: '#f9a8d4', sendBtnTextLight: '#9d174d',
+      sendBtnBgDark: '#4c0519', sendBtnBorderDark: '#fb7185', sendBtnTextDark: '#fecdd3',
+      cancelBtnBgLight: '#eef2ff', cancelBtnBorderLight: '#c7d2fe', cancelBtnTextLight: '#3730a3',
+      cancelBtnBgDark: '#1e1b4b', cancelBtnBorderDark: '#818cf8', cancelBtnTextDark: '#c7d2fe',
+      thumbUpBgLight: '#fdf2f8', thumbUpBgDark: '#4c0519', thumbUpBorder: '#fb7185',
+      thumbDownBgLight: '#eef2ff', thumbDownBgDark: '#1e1b4b', thumbDownBorder: '#818cf8',
+    },
+    amber: {
+      overlay: 'rgba(245,158,11,0.12)',
+      cardBgLight: '#fffbeb', cardBgDark: '#451a03',
+      inputBgLight: '#fffbeb', inputBgDark: '#451a03',
+      textLight: '#78350f', textDark: '#fde68a',
+      borderLight: '#fcd34d', borderDark: '#78350f',
+      focusRing: 'rgba(245,158,11,0.45)',
+      primaryStart: '#f59e0b', primaryEnd: '#d97706', primaryText: '#78350f',
+      ghostBorderLight: '#fcd34d', ghostBorderDark: '#f59e0b',
+      fabBgLight: '#92400e', fabBgDark: '#f59e0b', fabTextLight: '#fffbeb', fabTextDark: '#451a03',
+      sendBtnBgLight: '#fffbeb', sendBtnBorderLight: '#fcd34d', sendBtnTextLight: '#92400e',
+      sendBtnBgDark: '#451a03', sendBtnBorderDark: '#fbbf24', sendBtnTextDark: '#fde68a',
+      cancelBtnBgLight: '#eef2ff', cancelBtnBorderLight: '#c7d2fe', cancelBtnTextLight: '#3730a3',
+      cancelBtnBgDark: '#1e1b4b', cancelBtnBorderDark: '#818cf8', cancelBtnTextDark: '#c7d2fe',
+      thumbUpBgLight: '#fffbeb', thumbUpBgDark: '#451a03', thumbUpBorder: '#fbbf24',
+      thumbDownBgLight: '#fff1f2', thumbDownBgDark: '#4c0519', thumbDownBorder: '#fb7185',
+    },
+    violet: {
+      overlay: 'rgba(139,92,246,0.12)',
+      cardBgLight: '#f5f3ff', cardBgDark: '#2e1065',
+      inputBgLight: '#f5f3ff', inputBgDark: '#2e1065',
+      textLight: '#2e1065', textDark: '#ede9fe',
+      borderLight: '#ddd6fe', borderDark: '#4c1d95',
+      focusRing: 'rgba(139,92,246,0.45)',
+      primaryStart: '#8b5cf6', primaryEnd: '#7c3aed', primaryText: '#2e1065',
+      ghostBorderLight: '#ddd6fe', ghostBorderDark: '#a78bfa',
+      fabBgLight: '#6d28d9', fabBgDark: '#a78bfa', fabTextLight: '#f5f3ff', fabTextDark: '#2e1065',
+      sendBtnBgLight: '#f5f3ff', sendBtnBorderLight: '#ddd6fe', sendBtnTextLight: '#6d28d9',
+      sendBtnBgDark: '#2e1065', sendBtnBorderDark: '#a78bfa', sendBtnTextDark: '#ddd6fe',
+      cancelBtnBgLight: '#ecfeff', cancelBtnBorderLight: '#a5f3fc', cancelBtnTextLight: '#155e75',
+      cancelBtnBgDark: '#083344', cancelBtnBorderDark: '#22d3ee', cancelBtnTextDark: '#a5f3fc',
+      thumbUpBgLight: '#f5f3ff', thumbUpBgDark: '#2e1065', thumbUpBorder: '#a78bfa',
+      thumbDownBgLight: '#fff1f2', thumbDownBgDark: '#4c0519', thumbDownBorder: '#fb7185',
+    },
+    cyan: {
+      overlay: 'rgba(6,182,212,0.12)',
+      cardBgLight: '#ecfeff', cardBgDark: '#083344',
+      inputBgLight: '#ecfeff', inputBgDark: '#083344',
+      textLight: '#083344', textDark: '#cffafe',
+      borderLight: '#a5f3fc', borderDark: '#164e63',
+      focusRing: 'rgba(6,182,212,0.45)',
+      primaryStart: '#06b6d4', primaryEnd: '#0891b2', primaryText: '#083344',
+      ghostBorderLight: '#a5f3fc', ghostBorderDark: '#22d3ee',
+      fabBgLight: '#155e75', fabBgDark: '#22d3ee', fabTextLight: '#ecfeff', fabTextDark: '#083344',
+      sendBtnBgLight: '#ecfeff', sendBtnBorderLight: '#a5f3fc', sendBtnTextLight: '#155e75',
+      sendBtnBgDark: '#083344', sendBtnBorderDark: '#22d3ee', sendBtnTextDark: '#a5f3fc',
+      cancelBtnBgLight: '#fff1f2', cancelBtnBorderLight: '#fecdd3', cancelBtnTextLight: '#9f1239',
+      cancelBtnBgDark: '#4c0519', cancelBtnBorderDark: '#fb7185', cancelBtnTextDark: '#fecdd3',
+      thumbUpBgLight: '#ecfeff', thumbUpBgDark: '#083344', thumbUpBorder: '#22d3ee',
+      thumbDownBgLight: '#fff1f2', thumbDownBgDark: '#4c0519', thumbDownBorder: '#fb7185',
+    },
+    slate: {
+      overlay: 'rgba(100,116,139,0.12)',
+      cardBgLight: '#f1f5f9', cardBgDark: '#0f172a',
+      inputBgLight: '#f8fafc', inputBgDark: '#0f172a',
+      textLight: '#0f172a', textDark: '#e2e8f0',
+      borderLight: '#cbd5e1', borderDark: '#334155',
+      focusRing: 'rgba(100,116,139,0.45)',
+      primaryStart: '#64748b', primaryEnd: '#475569', primaryText: '#0f172a',
+      ghostBorderLight: '#cbd5e1', ghostBorderDark: '#94a3b8',
+      fabBgLight: '#1f2937', fabBgDark: '#94a3b8', fabTextLight: '#f1f5f9', fabTextDark: '#0f172a',
+      sendBtnBgLight: '#f1f5f9', sendBtnBorderLight: '#cbd5e1', sendBtnTextLight: '#334155',
+      sendBtnBgDark: '#0f172a', sendBtnBorderDark: '#94a3b8', sendBtnTextDark: '#cbd5e1',
+      cancelBtnBgLight: '#fff1f2', cancelBtnBorderLight: '#fecdd3', cancelBtnTextLight: '#9f1239',
+      cancelBtnBgDark: '#4c0519', cancelBtnBorderDark: '#fb7185', cancelBtnTextDark: '#fecdd3',
+      thumbUpBgLight: '#f1f5f9', thumbUpBgDark: '#0f172a', thumbUpBorder: '#94a3b8',
+      thumbDownBgLight: '#fff1f2', thumbDownBgDark: '#4c0519', thumbDownBorder: '#fb7185',
+    },
+  };
+  return spec[name] || spec['emerald'];
 }
 
 // Minimal style helpers (keep bundle tiny and dependency-free)

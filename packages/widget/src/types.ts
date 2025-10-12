@@ -1,4 +1,12 @@
-export type Theme = 'light' | 'dark' | 'auto';
+export type Palette = 'emerald' | 'indigo' | 'rose' | 'amber' | 'violet' | 'cyan' | 'slate';
+export type Theme =
+  | 'light'
+  | 'dark'
+  | 'auto'
+  | Palette
+  | `light:${Palette}`
+  | `dark:${Palette}`
+  | `auto:${Palette}`;
 export type Position = 'tl' | 'tr' | 'bl' | 'br';
 
 export interface InitOptions {
@@ -16,6 +24,12 @@ export interface InitOptions {
   /** Enable verbose client logs (also enabled if localStorage['fidbak:debug']==='1'). */
   debug?: boolean;
   themeOverrides?: ThemeOverrides; // allow brands to customize look & feel
+  /** Choose the Floating Action Button variant. Defaults to 'icon'. */
+  fabVariant?: 'icon' | 'text';
+  /** Text to show inside the text FAB. Defaults to 'Feedback'. */
+  fabText?: string;
+  /** Small hotkey label badge text shown on the right in text FAB. Defaults to 'F'. */
+  hotkeyLabel?: string;
 }
 
 export interface RenderOptions {

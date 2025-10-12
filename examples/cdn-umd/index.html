@@ -16,40 +16,81 @@
       <h1>UMD CDN Example</h1>
       <p>This page loads the global <code>fidbak</code> from the UMD bundle (simulating a CDN drop).</p>
       <h2>Try it</h2>
-      <p>Click the floating button to leave feedback.</p>
+      <p>Click the floating button to leave feedback. Use the controls below to switch FAB variants.</p>
+      <div style="margin:12px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+        <label>Variant:</label>
+        <button id="btn-icon" type="button">Icon</button>
+        <button id="btn-text" type="button">Text</button>
+        <label style="margin-left:16px">Palette:</label>
+        <select id="palette">
+          <option value="emerald">emerald</option>
+          <option value="indigo">indigo</option>
+          <option value="rose">rose</option>
+          <option value="amber">amber</option>
+          <option value="violet">violet</option>
+          <option value="cyan">cyan</option>
+        </select>
+      </div>
       <h2>Section A</h2>
       <p>Select some text here and then click the FAB.</p>
     </div>
-    <script src="https://unpkg.com/@fidbak/widget@latest/dist/fidbak.min.global.js"></script> 
     <script>
-      // UMD global is available as window.fidbak
-      window.fidbak('init', {
-        siteId: 'puma-docs',
-        theme: 'auto',
-        position: 'bl',
-        draggable: true,
-        includeQuery: false,
-        captureSelection: true,
-        debounceMs: 0,
-        themeOverrides: {
-          fontFamily: 'Inter, system-ui, sans-serif',
-          radius: { card: 20, input: 16, button: 24, thumb: 24, close: 24 },
-          colors: {
-            primaryStart: '#6366f1',
-            primaryEnd:   '#4f46e5',
-            primaryText:  '#fff',
-            borderLight:  '#e5e7eb',
-            borderDark:   '#374151',
-            fabBgLight:   '#111',
-            fabBgDark:    '#111',
-            fabTextLight: '#fff',
-            fabTextDark:  '#fff',
-            focusRing: '#FFEB3B'
-          },
-          spacing: { cardPadding: 16 },
-          fab: { size: 64 }
-        },
-      });
+      // Try to load local UMD from Vite /@fs first, then fall back to repo-relative path.
+      function loadScript(src, onload, onerror) {
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = true;
+        s.onload = onload;
+        s.onerror = onerror;
+        document.head.appendChild(s);
+      }
+      function boot() {
+        if (typeof window.fidbak !== 'function') {
+          console.error('[cdn-umd] fidbak global not found. Ensure the UMD file path is correct and built.');
+          return;
+        }
+        startExample();
+      }
+      const fsPath = '/@fs/Users/ekene/CascadeProjects/fidbak/packages/widget/dist/fidbak.min.global.js';
+      const relPath = '../../packages/widget/dist/fidbak.min.global.js';
+      loadScript(fsPath, boot, () => loadScript(relPath, boot, () => {
+        console.error('[cdn-umd] Failed to load UMD from both /@fs and relative path.');
+      }));
     </script>
-  </body>
-</html>
+    <script>
+      // Helper: get query param
+      function qp(k){
+        const u = new URL(location.href); return u.searchParams.get(k);
+      }
+      const apiBaseUrl = qp('api') || undefined; // e.g. ?api=http://127.0.0.1:8787
+      function startExample() {
+        const common = {
+          siteId: 'puma-docs',
+          position: 'br',
+          draggable: true,
+          includeQuery: false,
+          debounceMs: 0,
+          themeOverrides: {
+            fontFamily: 'Inter, system-ui, sans-serif',
+            radius: { card: 20, input: 16, button: 24, thumb: 24, close: 24 },
+          },
+        };
+        window.fidbak('init', Object.assign({}, common, {
+          apiBaseUrl,
+          fabVariant: 'text',
+          fabText: 'Feedback',
+          hotkeyLabel: 'F',
+        }));
+        // Controls
+        document.getElementById('btn-icon').addEventListener('click', () => {
+          window.fidbak('init', Object.assign({}, common, { apiBaseUrl, theme: `auto:${document.getElementById('palette').value}`, fabVariant: 'icon' }));
+        });
+        document.getElementById('btn-text').addEventListener('click', () => {
+          window.fidbak('init', Object.assign({}, common, { apiBaseUrl, theme: `auto:${document.getElementById('palette').value}`, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F' }));
+        });
+        document.getElementById('palette').addEventListener('change', () => {
+          // Re-render with current variant; default to text
+          window.fidbak('init', Object.assign({}, common, { apiBaseUrl, theme: `auto:${document.getElementById('palette').value}`, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F' }));
+        });
+      }
+    </script>
