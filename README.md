@@ -141,7 +141,7 @@ The dashboard uses Clerk JWTs for owner‑protected endpoints (e.g., listing/man
 
 ## Use in a Next.js App
 
-* Open the [Fidbak dashboard](https://fidbak.dev/dashboard) and create a site to get your `siteId`. While creating the site, ensure `http://localhost:3000` or whichever port your Next.js app runs on is in Allowed Origins.
+* Open the [Fidbak dashboard](https://fidbak.dev) and create a site to get your `siteId`. While creating the site, ensure `http://localhost:3000` or whichever port your Next.js app runs on is in Allowed Origins.
     
 * Create a FidbakWidget component: 
 
@@ -189,7 +189,7 @@ export default function RootLayout({
 }
 ```
 
-* Run your app and confirm the FAB shows. Submit a feedback and check your [Fidbak dashboard](https://fidbak.dev/dashboard) for results and analytics.
+* Run your app and confirm the FAB shows. Submit a feedback and check your [Fidbak dashboard](https://fidbak.dev) for results and analytics.
 
 ### Test it
 - Add your dev origin (e.g., `http://localhost:3000`) to Allowed Origins for the site in the Dashboard.

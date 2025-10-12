@@ -3,7 +3,7 @@
 Lightweight, framework‑free, feedback Widget with zero dependencies. Collect feedback from your users from any site with ease.
 
 # Usage
-* Open the [Fidbak dashboard](https://fidbak.dev/dashboard) and create a site. The dashboard will:
+* Open the [Fidbak dashboard](https://fidbak.dev) and create a site. The dashboard will:
     * Return your `siteId`.
     * Let you add Allowed Origins (CORS).
     * Optionally add per‑site Webhooks (Slack or any URL).
@@ -61,7 +61,7 @@ The data may include `x-fidbak-signature` (HMAC‑SHA256 of raw body) if you set
 
 # How to use with Next.js
 
-* Open the [Fidbak dashboard](https://fidbak.dev/dashboard) and create a site to get your `siteId`. While creating the site, ensure `http://localhost:3000` or whichever port your Next.js app runs on is in Allowed Origins.
+* Open the [Fidbak dashboard](https://fidbak.dev) and create a site to get your `siteId`. While creating the site, ensure `http://localhost:3000` or whichever port your Next.js app runs on is in Allowed Origins.
     
 * Create a FidbakWidget component: 
 
@@ -109,7 +109,7 @@ export default function RootLayout({
 }
 ```
 
-* Run your app and confirm the FAB shows. Submit a feedback and check your [Fidbak dashboard](https://fidbak.dev/dashboard) for results and analytics.
+* Run your app and confirm the FAB shows. Submit a feedback and check your [Fidbak dashboard](https://fidbak.dev) for results and analytics.
 
 ## License
 
