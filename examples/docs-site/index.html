@@ -24,6 +24,11 @@
       <div class="content">
         <h1>Welcome</h1>
         <p>This is a simple static docs site to test the Fidbak feedback widget.</p>
+        <div style="margin:12px 0; display:flex; gap:8px; align-items:center">
+          <label>FAB Variant:</label>
+          <button id="v-icon" type="button">Icon</button>
+          <button id="v-text" type="button">Text</button>
+        </div>
         <h2>Section A</h2>
         <p>Scroll and select some text, then submit feedback.</p>
       </div>
@@ -31,13 +36,14 @@
     <footer>Example © 2025</footer>
     <script type="module">
       import fidbak from '@fidbak/widget';
-      fidbak('init', {
+      const qp = (k) => new URL(location.href).searchParams.get(k);
+      const apiBaseUrl = qp('api') || undefined; // e.g. ?api=http://127.0.0.1:8787
+      const base = {
         siteId: 'puma-docs',
         theme: 'auto',
         position: 'br',
         draggable: true,
         includeQuery: false,
-        captureSelection: true,
         debounceMs: 0,
         themeOverrides: {
           fontFamily: 'Inter, system-ui, sans-serif',
@@ -57,6 +63,15 @@
           spacing: { cardPadding: 16 },
           fab: { size: 64 }
         },
+      };
+      // default to text
+      fidbak('init', { ...base, apiBaseUrl, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F' });
+
+      document.getElementById('v-icon').addEventListener('click', () => {
+        fidbak('init', { ...base, apiBaseUrl, fabVariant: 'icon' });
+      });
+      document.getElementById('v-text').addEventListener('click', () => {
+        fidbak('init', { ...base, apiBaseUrl, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F' });
       });
     </script>
   </body>

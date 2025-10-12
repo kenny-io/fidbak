@@ -1,71 +1,15 @@
-// Welcome email using provided template (inline for Worker)
-function renderWelcomeHtml(firstName: string, ctaUrl: string, ctaText: string): string {
-  const safe = firstName || 'there';
-  return `<!DOCTYPE html>
-  <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Welcome to Fidbak</title></head>
-  <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px;"><tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-        <tr><td style="background:linear-gradient(135deg,#f97316 0%,#ea580c 100%);padding:40px 40px 30px;text-align:center;">
-          <h1 style="margin:0;color:#ffffff;font-size:32px;font-weight:700;letter-spacing:-0.5px;">Fidbak</h1>
-          <p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">Lightweight customer feedback platform</p>
-        </td></tr>
-        <tr><td style="padding:40px;">
-          <p style="margin:0 0 8px;color:#111827;font-size:16px;line-height:1.6;">Hi ${safe},</p>
-          <p style="margin:0 0 16px;color:#4b5563;font-size:16px;line-height:1.6;">Thanks for signing up for Fidbak.</p>
-          <div style="text-align:center;margin:24px 0;">
-            <a href="${ctaUrl}" style="display:inline-block;background-color:#f97316;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">${ctaText}</a>
-          </div>
-          <p style="margin:0 0 4px;color:#4b5563;font-size:16px;line-height:1.6;">Glad to have you with us.</p>
-          <br/>
-          <p style="margin:0;color:#111827;font-size:16px;line-height:1.6;"><strong>Kenny</strong><br><span style="color:#6b7280;font-size:14px;">Founder, Fidbak</span></p>
-        </td></tr>
-        <tr><td style="padding:24px 40px;background-color:#f9fafb;border-top:1px solid #e5e7eb;">
-          <p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;line-height:1.5;">© 2025 Fidbak. All rights reserved.</p>
-        </td></tr>
-      </table>
-    </td></tr></table>
-  </body></html>`;
-}
+import { json, cors, ok, notFound, bad } from './core/http';
+import { getAuth, type AuthUser } from './auth';
+import { listPlans } from './repositories/plans.repo';
+import { stripePost, createStripeCheckoutSession, createStripePortalSession } from './services/billing/stripe';
+import { fetchStripePriceWithCache } from './services/pricing';
+import { getOrCreateOrgForOwner, getOrgByStripeCustomerId, setOrgStripeCustomerId, updateOrgSubscriptionFields } from './repositories/orgs.repo';
+import { handleStripeEvent } from './services/billing/webhook';
+import { sendWelcomeEmail, sendInviteEmail, sendContactEmail } from './services/email/resend';
 
-// ---------- Stripe price caching (24h) ----------
-async function fetchStripePriceWithCache(env: Env, priceId: string | null | undefined): Promise<{ unit_amount: number | null; currency: string | null; interval: string | null } | null> {
-  if (!priceId) return null;
-  if (!env.DB) return null;
-  try {
-    await env.DB.prepare('CREATE TABLE IF NOT EXISTS stripe_price_cache (price_id TEXT PRIMARY KEY, unit_amount INTEGER, currency TEXT, interval TEXT, cached_at TEXT)').run();
-  } catch {}
-  // Try cache first
-  try {
-    const row = await env.DB.prepare('SELECT unit_amount, currency, interval, cached_at FROM stripe_price_cache WHERE price_id = ?').bind(priceId).first<{ unit_amount?: number | null; currency?: string | null; interval?: string | null; cached_at?: string }>();
-    if (row) {
-      const cachedAt = row.cached_at ? Date.parse(row.cached_at) : 0;
-      const ageMs = Date.now() - (Number.isFinite(cachedAt) ? cachedAt : 0);
-      if (ageMs < 24 * 60 * 60 * 1000) {
-        return { unit_amount: row.unit_amount ?? null, currency: row.currency ?? null, interval: row.interval ?? null };
-      }
-    }
-  } catch {}
-  // Fetch live from Stripe
-  if (!env.STRIPE_SECRET_KEY) return null;
-  try {
-    const resp = await fetch(`https://api.stripe.com/v1/prices/${encodeURIComponent(priceId)}`, {
-      headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
-    });
-    if (!resp.ok) return null;
-    const data: any = await resp.json();
-    const unit_amount = typeof data.unit_amount === 'number' ? data.unit_amount : null;
-    const currency = typeof data.currency === 'string' ? data.currency : null;
-    const interval = data?.recurring?.interval || null;
-    try {
-      await env.DB.prepare('INSERT INTO stripe_price_cache (price_id, unit_amount, currency, interval, cached_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(price_id) DO UPDATE SET unit_amount=excluded.unit_amount, currency=excluded.currency, interval=excluded.interval, cached_at=excluded.cached_at')
-        .bind(priceId, unit_amount, currency, interval, new Date().toISOString()).run();
-    } catch {}
-    return { unit_amount, currency, interval };
-  } catch {
-    return null;
-  }
-}
+// Welcome/invite email templates and senders moved to services/email/resend
+
+// Stripe price caching moved to services/pricing.ts
 
 // ---------- plan features helpers ----------
 async function getPlanFeatures(env: Env, planId: string | null | undefined): Promise<any> {
@@ -118,52 +62,7 @@ async function ensureOrgAdmin(env: Env, orgId: string, user: AuthUser): Promise<
   return r.is_admin;
 }
 
-// New: Team invite email template (styled like welcome)
-function renderInviteHtml(inviterName: string, orgName: string, acceptUrl: string): string {
-  const inviter = inviterName || 'A teammate';
-  const org = orgName || 'your team';
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>You're invited to Fidbak</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb;"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px;"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);"><tr><td style="background:linear-gradient(135deg,#f97316 0%,#ea580c 100%);padding:40px 40px 30px;text-align:center;"><h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.3px;">You're invited to Fidbak</h1><p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">Lightweight customer feedback platform</p></td></tr><tr><td style="padding:40px;"><p style="margin:0 0 16px;color:#111827;font-size:16px;line-height:1.6;">Hey there,</p><p style="margin:0 0 16px;color:#4b5563;font-size:16px;line-height:1.6;"><strong>${inviter}</strong> has invited you to join <strong>${org}</strong> on Fidbak.</p><div style="text-align:center;margin:24px 0;"><a href="${acceptUrl}" style="display:inline-block;background-color:#f97316;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">Accept invite</a></div><p style="margin:0;color:#6b7280;font-size:13px;line-height:1.6;">If you didn’t expect this, you can ignore this email.</p></td></tr><tr><td style="padding:24px 40px;background-color:#f9fafb;border-top:1px solid #e5e7eb;"><p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;line-height:1.5;">© 2025 Fidbak. All rights reserved.</p></td></tr></table></td></tr></table></body></html>`;
-}
 
-async function sendWelcomeEmail(env: Env, to: string, firstName: string, ctaUrl: string, ctaText: string): Promise<void> {
-  if (!env.RESEND_API_KEY || !env.INVITE_FROM_EMAIL) return;
-  const subject = 'Welcome to Fidbak';
-  const html = renderWelcomeHtml(firstName || 'there', ctaUrl, ctaText);
-  const text = `Hi ${firstName || 'there'},\n\nThanks for signing up for Fidbak. Get started: ${ctaUrl}\n\nIf you have any questions, just reply to this email.\n\n— Kenny, Founder`;
-  const resp = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: env.INVITE_FROM_EMAIL, to: [to], subject, html, text }),
-  });
-  try {
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      console.error('Resend welcome email failed', resp.status, body);
-    }
-  } catch {}
-}
-
-// Contact Sales email helper
-async function sendContactEmail(env: Env, payload: { fromEmail: string; fromName?: string; message: string; subject?: string }): Promise<void> {
-  if (!env.RESEND_API_KEY || !env.INVITE_FROM_EMAIL) return;
-  const to = 'kenny@fidbak.dev';
-  const subject = (payload.subject || 'Fidbak: Contact Sales').trim();
-  const safeFrom = payload.fromEmail || 'unknown@fidbak.dev';
-  const fromName = (payload.fromName || 'Fidbak user').trim();
-  const html = `\n    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111">\n      <h2 style=\"margin:0 0 12px\">Contact Sales</h2>\n      <p><strong>From:</strong> ${fromName} &lt;${safeFrom}&gt;</p>\n      <pre style=\"white-space:pre-wrap;background:#f8f9fa;border:1px solid #eee;border-radius:8px;padding:12px;margin-top:12px\">${payload.message}</pre>\n    </div>\n  `;
-  const text = `Contact Sales\nFrom: ${fromName} <${safeFrom}>\n\n${payload.message}`;
-  const resp = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: env.INVITE_FROM_EMAIL, to: [to], subject, html, text, reply_to: safeFrom }),
-  });
-  try {
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      console.error('Resend contact email failed', resp.status, body);
-    }
-  } catch {}
-}
 export interface Env {
   DB?: D1Database; // optional binding
   FIDBAK_DASHBOARD_BASE?: string; // used in Slack footer link
@@ -211,52 +110,7 @@ function buildAcceptUrl(env: Env, token: string): string {
   return `${b}/accept-invite?token=${encodeURIComponent(token)}`;
 }
 
-async function sendInviteEmail(env: Env, to: string, orgName: string, acceptUrl: string, inviterName?: string): Promise<void> {
-  if (!env.RESEND_API_KEY || !env.INVITE_FROM_EMAIL) return;
-  const inviter = inviterName && inviterName.trim().length ? inviterName.trim() : orgName;
-  const subject = `${inviter} invited you to join ${orgName} on Fidbak`;
-  const html = renderInviteHtml(inviter, orgName, acceptUrl);
-  const text = `You’ve been invited to join ${orgName} on Fidbak.\n\nAccept invite: ${acceptUrl}\n\nIf you didn’t expect this, you can ignore this email.`;
-  const resp = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ from: env.INVITE_FROM_EMAIL, to: [to], subject, html, text }),
-  });
-  // Best-effort: log failures for debugging in tail logs but do not throw
-  try {
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      console.error('Resend invite email failed', resp.status, body);
-    }
-  } catch {}
-}
 
-// Shared helper: POST to Stripe and return JSON or throw with detailed error
-async function stripePost(env: Env, url: string, body: URLSearchParams, idempotencyKey?: string): Promise<any> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-    'Content-Type': 'application/x-www-form-urlencoded',
-  };
-  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body,
-  });
-  const text = await res.text();
-  let json: any = null;
-  try { json = text ? JSON.parse(text) : null; } catch {}
-  if (!res.ok) {
-    const msg = json?.error?.message || text || `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-  return json;
-}
-
-// ---------- billing helpers (Phase 2: Stripe skeleton) ----------
 function planToPrice(env: Env, planId: string): string | null {
   const p = (s?: string) => (s && s.trim().length > 0 ? s.trim() : null);
   if (planId === 'pro') return p(env.STRIPE_PRICE_PRO);
@@ -273,41 +127,7 @@ function mapPriceToPlan(env: Env, priceId?: string): string | null {
   return null;
 }
 
-async function getOrCreateOrgForOwner(env: Env, owner: { sub?: string; email?: string }): Promise<{ org: any; created: boolean }> {
-  if (!env.DB) throw new Error('DB not configured');
-  const sub = owner.sub || null;
-  const email = owner.email || null;
-  // 1) Prefer an active membership org for this user
-  if (sub) {
-    try {
-      const memberOrg = await env.DB
-        .prepare(`SELECT o.*
-                  FROM org_members m
-                  JOIN orgs o ON o.id = m.org_id
-                  WHERE m.user_sub = ? AND m.status = 'active'
-                  ORDER BY datetime(COALESCE(m.joined_at, m.invited_at)) DESC
-                  LIMIT 1`)
-        .bind(sub)
-        .first<any>();
-      if (memberOrg) return { org: memberOrg, created: false } as any;
-    } catch {}
-  }
-  // 2) Fallback to an org owned by this user (sub preferred, then email)
-  let org = await env.DB.prepare('SELECT * FROM orgs WHERE owner_sub = ? LIMIT 1').bind(sub).first<any>();
-  if (!org && email) {
-    org = await env.DB.prepare('SELECT * FROM orgs WHERE owner_email = ? LIMIT 1').bind(email).first<any>();
-  }
-  if (org) return { org, created: false } as any;
-  // 3) Create new org on-the-fly with Free plan (personal org)
-  const id = crypto.randomUUID();
-  const created = new Date().toISOString();
-  await env.DB
-    .prepare('INSERT INTO orgs (id, name, owner_sub, owner_email, plan_id, stripe_customer_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, email ? `${email.split('@')[0]}'s Org` : 'My Org', sub, email, 'free', null, created)
-    .run();
-  const createdOrg = await env.DB.prepare('SELECT * FROM orgs WHERE id = ?').bind(id).first<any>();
-  return { org: createdOrg as any, created: true };
-}
+// getOrCreateOrgForOwner moved to repositories/orgs.repo
 
 async function getOrCreateStripeCustomer(env: Env, org: any, authUser: { email?: string }) {
   if (org?.stripe_customer_id) return org.stripe_customer_id as string;
@@ -319,78 +139,13 @@ async function getOrCreateStripeCustomer(env: Env, org: any, authUser: { email?:
   const json = await stripePost(env, 'https://api.stripe.com/v1/customers', body);
   if (!json?.id) throw new Error('stripe customers.create failed: missing id');
   const customerId = json.id as string;
-  if (env.DB) {
-    await env.DB.prepare('UPDATE orgs SET stripe_customer_id = ? WHERE id = ?').bind(customerId, org.id).run();
-  }
+  await setOrgStripeCustomerId(env, org.id, customerId);
   return customerId;
 }
 
-async function createStripeCheckoutSession(env: Env, args: { customer?: string; customer_email?: string; priceId: string; mode: 'subscription'; success_url: string; cancel_url: string }, idem?: string) {
-  const body = new URLSearchParams();
-  body.set('mode', args.mode);
-  if (args.customer) body.set('customer', args.customer);
-  if (args.customer_email) body.set('customer_email', args.customer_email);
-  body.set('line_items[0][price]', args.priceId);
-  body.set('line_items[0][quantity]', '1');
-  body.set('success_url', args.success_url);
-  body.set('cancel_url', args.cancel_url);
-  const json = await stripePost(env, 'https://api.stripe.com/v1/checkout/sessions', body, idem);
-  return json;
-}
+// ---------- billing helpers (Phase 2: Stripe skeleton) ----------
 
-async function createStripePortalSession(env: Env, customerId: string, returnUrl: string) {
-  const body = new URLSearchParams();
-  body.set('customer', customerId);
-  body.set('return_url', returnUrl);
-  const json = await stripePost(env, 'https://api.stripe.com/v1/billing_portal/sessions', body);
-  return json;
-}
-
-async function handleStripeEvent(env: Env, event: any) {
-  if (!env.DB) return;
-  const type = String(event?.type || '');
-  // Extract org_id when possible from metadata; otherwise resolve via customer lookup
-  const data = event?.data?.object || {};
-  if (type === 'checkout.session.completed') {
-    const customer = data?.customer as string | undefined;
-    const sub = data?.subscription || {};
-    const priceId = sub?.items?.data?.[0]?.price?.id || data?.display_items?.[0]?.price?.id || undefined;
-    const status = sub?.status || 'active';
-    const current_period_end = sub?.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : undefined;
-    if (customer) {
-      const org = await env.DB.prepare('SELECT * FROM orgs WHERE stripe_customer_id = ? LIMIT 1').bind(customer).first<any>();
-      const plan = mapPriceToPlan(env, priceId) || 'pro';
-      if (org) {
-        await env.DB.prepare('UPDATE orgs SET plan_id = ?, price_id = ?, subscription_status = ?, current_period_end = ? WHERE id = ?')
-          .bind(plan, priceId || null, status, current_period_end || null, org.id)
-          .run();
-      }
-    }
-  } else if (type === 'customer.subscription.updated' || type === 'customer.subscription.created') {
-    const sub = data;
-    const customer = sub?.customer as string | undefined;
-    const priceId = sub?.items?.data?.[0]?.price?.id as string | undefined;
-    const status = sub?.status || null;
-    const current_period_end = sub?.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
-    const cancel_at = sub?.cancel_at ? new Date(sub.cancel_at * 1000).toISOString() : null;
-    const trial_end = sub?.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null;
-    if (customer) {
-      const org = await env.DB.prepare('SELECT * FROM orgs WHERE stripe_customer_id = ? LIMIT 1').bind(customer).first<any>();
-      const plan = mapPriceToPlan(env, priceId);
-      if (org) {
-        await env.DB.prepare('UPDATE orgs SET plan_id = COALESCE(?, plan_id), price_id = ?, subscription_status = ?, current_period_end = ?, cancel_at = ?, trial_end = ? WHERE id = ?')
-          .bind(plan || null, priceId || null, status, current_period_end, cancel_at, trial_end, org.id)
-          .run();
-      }
-    }
-  } else if (type === 'customer.subscription.deleted') {
-    const customer = data?.customer as string | undefined;
-    if (customer) {
-      const org = await env.DB.prepare('SELECT * FROM orgs WHERE stripe_customer_id = ? LIMIT 1').bind(customer).first<any>();
-      if (org) await env.DB.prepare('UPDATE orgs SET plan_id = ?, subscription_status = ? WHERE id = ?').bind('free', 'canceled', org.id).run();
-    }
-  }
-}
+// Webhook handler moved to services/billing/webhook
 
 // New: list sites by owner using sub (preferred) then email
 async function listSitesByOwner(
@@ -468,37 +223,7 @@ const SITES: Record<string, { name: string; hmac_secret?: string; cors?: string[
   },
 };
 
-function json(data: unknown, init: ResponseInit = {}, origin?: string) {
-  const h = new Headers(init.headers);
-  h.set('content-type', 'application/json; charset=utf-8');
-  // Dev CORS; later replace with per-site allowlist
-  if (origin) h.set('access-control-allow-origin', origin);
-  return new Response(JSON.stringify(data), { ...init, headers: h });
-}
-
-function cors(request: Request): { origin: string | undefined; isPreflight: boolean } {
-  const origin = request.headers.get('origin') || undefined;
-  const isPreflight = request.method === 'OPTIONS';
-  return { origin, isPreflight };
-}
-
-function ok(init: ResponseInit = {}, origin?: string) {
-  const h = new Headers(init.headers);
-  if (origin) h.set('access-control-allow-origin', origin);
-  return new Response('ok', { ...init, headers: h });
-}
-
-function notFound(origin?: string) {
-  const h = new Headers();
-  if (origin) h.set('access-control-allow-origin', origin);
-  return new Response('Not found', { status: 404, headers: h });
-}
-
-function bad(msg: string, origin?: string) {
-  const h = new Headers({ 'content-type': 'application/json; charset=utf-8' });
-  if (origin) h.set('access-control-allow-origin', origin);
-  return new Response(JSON.stringify({ error: msg }), { status: 400, headers: h });
-}
+// http helpers moved to core/http.ts
 
 function ipFrom(req: Request) {
   return (
@@ -551,108 +276,7 @@ function corsForSite(siteId: string | undefined, origin: string | undefined): st
   return site.cors.includes(origin) ? origin : undefined;
 }
 
-// ------------- Auth (Clerk JWT) -------------
-type AuthUser = { sub: string; email?: string };
-
-const JWKS_CACHE: Map<string, { fetchedAt: number; keys: JsonWebKey[] }> = new Map();
-
-function b64urlToUint8(s: string): Uint8Array {
-  s = s.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = s.length % 4 ? 4 - (s.length % 4) : 0;
-  const base = s + '='.repeat(pad);
-  const bin = atob(base);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-async function fetchJwks(jwksUrl: string): Promise<JsonWebKey[]> {
-  const cached = JWKS_CACHE.get(jwksUrl);
-  const now = Date.now();
-  if (cached && now - cached.fetchedAt < 15 * 60 * 1000) return cached.keys;
-  const resp = await fetch(jwksUrl, { headers: { 'cache-control': 'no-cache' } });
-  if (!resp.ok) throw new Error('jwks_fetch_failed');
-  const data = await resp.json<{ keys: JsonWebKey[] }>();
-  JWKS_CACHE.set(jwksUrl, { fetchedAt: now, keys: data.keys || [] });
-  return data.keys || [];
-}
-
-async function verifyClerkJWT(env: Env, token: string): Promise<AuthUser | undefined> {
-  try {
-    const [h, p, s] = token.split('.');
-    if (!h || !p || !s) return undefined;
-    const header = JSON.parse(new TextDecoder().decode(b64urlToUint8(h)));
-    const payload = JSON.parse(new TextDecoder().decode(b64urlToUint8(p)));
-    const sig = b64urlToUint8(s);
-    // IMPORTANT: declare `data` before it is captured by attemptVerify()
-    const data = new TextEncoder().encode(`${h}.${p}`);
-
-    const iss = env.CLERK_ISSUER || '';
-    const jwksUrl = env.CLERK_JWKS_URL || '';
-    const iss2 = env.CLERK_ISSUER_2 || '';
-    const jwksUrl2 = env.CLERK_JWKS_URL_2 || '';
-    const aud = env.CLERK_AUDIENCE;
-    if (!iss || !jwksUrl) return undefined;
-    // Only enforce audience when both sides present; allow tokens without aud
-    if (aud && payload.aud && payload.aud !== aud) return undefined;
-    if (typeof payload.exp === 'number' && Date.now() / 1000 > payload.exp) return undefined;
-
-    // Helper to attempt verify against a given JWKS
-    const attemptVerify = async (jwksUrlTry: string, issTry: string): Promise<boolean> => {
-      if (!jwksUrlTry) return false;
-      // if token has iss, ensure it matches this issuer start
-      if (payload.iss && issTry && !String(payload.iss).startsWith(issTry)) return false;
-      const keys = await fetchJwks(jwksUrlTry);
-      if (!keys || keys.length === 0) return false;
-      const candidates = header.kid ? [
-        ...keys.filter((k: any) => k.kid === header.kid),
-        ...keys.filter((k: any) => k.kid !== header.kid),
-      ] : keys;
-      for (const jwk of candidates) {
-        try {
-          const cryptoKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
-          if (await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sig, data)) return true;
-        } catch {}
-      }
-      return false;
-    };
-
-    const algo = (header.alg as string) || 'RS256';
-    if (!/^RS(256|384|512)$/.test(algo)) return undefined;
-
-    // Try verification against all available JWKS keys if kid doesn't match
-    let verified = await attemptVerify(jwksUrl, iss);
-    if (!verified && jwksUrl2) {
-      verified = await attemptVerify(jwksUrl2, iss2 || '');
-    }
-    if (!verified) {
-      // Dev fallback: in local env allow unverified tokens if issuer matches configured dev issuer and token not expired
-      const isDev = env.FIDBAK_DEV_AUTOMIGRATE === '1';
-      const issMatch = (payload.iss && ((iss && String(payload.iss).startsWith(iss)) || (iss2 && String(payload.iss).startsWith(iss2)))) || false;
-      if (!(isDev && issMatch)) return undefined;
-    }
-
-    // Try multiple Clerk payload shapes for email
-    const email: string | undefined =
-      payload.email ||
-      (payload as any)['email_address'] ||
-      (payload as any)['primary_email_address'] ||
-      (Array.isArray((payload as any).email_addresses) && (payload as any).email_addresses[0]?.email_address) ||
-      ((payload as any).user && (((payload as any).user.email) || ((payload as any).user.email_address)));
-    const sub: string | undefined = (payload as any).sub;
-    if (!sub) return undefined;
-    return { sub, email };
-  } catch {
-    return undefined;
-  }
-}
-
-async function getAuth(env: Env, request: Request): Promise<AuthUser | undefined> {
-  const auth = request.headers.get('authorization') || request.headers.get('Authorization');
-  if (!auth || !auth.toLowerCase().startsWith('bearer ')) return undefined;
-  const token = auth.slice(7).trim();
-  return verifyClerkJWT(env, token);
-}
+// Auth helpers moved to ./auth
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -877,20 +501,10 @@ export default {
       const { origin: reqOrigin } = cors(request);
       if (!env.DB) return json({ plans: [] }, {}, reqOrigin || '*');
       try {
-        const res = await env.DB
-          .prepare('SELECT id, name, monthly_event_limit, stripe_price_id AS price_id, features_json FROM plans ORDER BY CASE id WHEN "free" THEN 0 WHEN "pro" THEN 1 WHEN "team" THEN 2 WHEN "enterprise" THEN 3 ELSE 99 END, name')
-          .all<{ id: string; name?: string; monthly_event_limit?: number | null; price_id?: string | null; features_json?: string | null }>();
-        const raw = (res.results || []) as any[];
-        const withStripe = await Promise.all(raw.map(async (p) => {
+        const basePlans = await listPlans(env as any);
+        const withStripe = await Promise.all(basePlans.map(async (p) => {
           const stripe_price = await fetchStripePriceWithCache(env, p.price_id || null).catch(() => null);
-          return {
-            id: p.id as string,
-            name: (p.name || p.id) as string,
-            monthly_event_limit: p.monthly_event_limit ?? null,
-            price_id: p.price_id || null,
-            features: (() => { try { return p.features_json ? JSON.parse(p.features_json) : {}; } catch { return {}; } })(),
-            stripe_price,
-          };
+          return { ...p, stripe_price } as any;
         }));
         return json({ plans: withStripe }, {}, reqOrigin || '*');
       } catch (e: any) {
