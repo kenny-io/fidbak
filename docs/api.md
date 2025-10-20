@@ -19,6 +19,44 @@ Fidbak is a lightweight service for collecting user feedback (thumbs up/down wit
 - Pagination uses `limit` and `offset` query parameters.
 - For browser clients, requests must originate from a URL in the Site’s CORS allowlist.
 
+## Widget integration quick reference
+
+- Initialization is performed via `fidbak('init', options)`.
+- Unified theme control via a single `theme` option:
+  - Values: `light`, `dark`, `auto`, a palette name (`violet`, `emerald`, `indigo`, `amber`, `cyan`, `rose`, `slate`), or a compound form `mode:palette` (e.g., `light:violet`, `auto:indigo`).
+  - Palettes restyle the entire modal and FAB (backgrounds, borders, text, accents, inputs, thumbs, buttons). `auto` uses `prefers-color-scheme` for light/dark.
+- FAB variants:
+  - `fabVariant`: `'icon' | 'text'`
+  - For `text` variant you can set `fabText` (e.g., `"Feedback"`) and `hotkeyLabel` (e.g., `"F"`).
+- Position:
+  - `position`: `'tl' | 'tr' | 'bl' | 'br'` (default `'br'`). Modal appears just above the FAB.
+
+ESM example:
+
+```html
+<script type="module">
+  import fidbak from '@fidbak/widget'
+  fidbak('init', {
+    siteId: 'your-site-id',
+    theme: 'auto:violet',       // 'light' | 'dark' | 'auto' | palette or 'mode:palette'
+    position: 'br',             // 'tl' | 'tr' | 'bl' | 'br'
+    fabVariant: 'text',         // 'icon' | 'text'
+    fabText: 'Feedback',
+    hotkeyLabel: 'F'
+  })
+</script>
+```
+
+CDN example:
+
+```html
+<script src="https://unpkg.com/@fidbak/widget@latest/dist/fidbak.min.global.js"></script>
+<script>
+  window.fidbak('init', { siteId: 'your-site-id', theme: 'auto:violet', position: 'br', fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F' })
+  
+</script>
+```
+
 ---
 
 ## Health
@@ -191,6 +229,8 @@ POST `/v1/feedback`
   "meta": { "userAgent": "...", "referrer": "..." }
 }
 ```
+- Notes:
+  - `email` is optional. The default widget UI does not collect email; include it only if you capture it separately.
 - Response 202 Accepted:
 ```json
 { "accepted": true, "id": "fb_123" }
