@@ -9,7 +9,7 @@
     "preview": "vite preview --port 5180"
   },
   "dependencies": {
-    "@fidbak/widget": "^0.1.9"
+    "@fidbak/widget": "file:../../packages/widget"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

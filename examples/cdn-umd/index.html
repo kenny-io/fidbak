@@ -30,6 +30,9 @@
           <option value="violet">violet</option>
           <option value="cyan">cyan</option>
         </select>
+        <span style="margin-left:16px; padding-left:16px; border-left:1px solid #e5e7eb">
+          <label><input type="checkbox" id="always-show" /> Always show comment</label>
+        </span>
       </div>
       <h2>Section A</h2>
       <p>Select some text here and then click the FAB.</p>
@@ -64,6 +67,7 @@
       }
       const apiBaseUrl = qp('api') || undefined; // e.g. ?api=http://127.0.0.1:8787
       function startExample() {
+        const getAlwaysShow = () => document.getElementById('always-show').checked;
         const common = {
           siteId: 'puma-docs',
           position: 'br',
@@ -80,17 +84,22 @@
           fabVariant: 'text',
           fabText: 'Feedback',
           hotkeyLabel: 'F',
+          alwaysShowComment: getAlwaysShow(),
         }));
         // Controls
         document.getElementById('btn-icon').addEventListener('click', () => {
-          window.fidbak('init', Object.assign({}, common, { apiBaseUrl, theme: `auto:${document.getElementById('palette').value}`, fabVariant: 'icon' }));
+          window.fidbak('init', Object.assign({}, common, { apiBaseUrl, theme: `auto:${document.getElementById('palette').value}`, fabVariant: 'icon', alwaysShowComment: getAlwaysShow() }));
         });
         document.getElementById('btn-text').addEventListener('click', () => {
-          window.fidbak('init', Object.assign({}, common, { apiBaseUrl, theme: `auto:${document.getElementById('palette').value}`, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F' }));
+          window.fidbak('init', Object.assign({}, common, { apiBaseUrl, theme: `auto:${document.getElementById('palette').value}`, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F', alwaysShowComment: getAlwaysShow() }));
         });
         document.getElementById('palette').addEventListener('change', () => {
           // Re-render with current variant; default to text
-          window.fidbak('init', Object.assign({}, common, { apiBaseUrl, theme: `auto:${document.getElementById('palette').value}`, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F' }));
+          window.fidbak('init', Object.assign({}, common, { apiBaseUrl, theme: `auto:${document.getElementById('palette').value}`, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F', alwaysShowComment: getAlwaysShow() }));
+        });
+        document.getElementById('always-show').addEventListener('change', () => {
+          // Re-init with current settings
+          window.fidbak('init', Object.assign({}, common, { apiBaseUrl, theme: `auto:${document.getElementById('palette').value}`, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F', alwaysShowComment: getAlwaysShow() }));
         });
       }
     </script>

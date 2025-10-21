@@ -275,9 +275,11 @@ function openModal(invoker?: HTMLElement) {
   up.addEventListener('click', () => {
     STATE.currentRating = 'up';
     selectThumb(up, down, theme, 'up');
-    // Hide details when experience is positive
+    // Hide details when experience is positive (unless alwaysShowComment is true)
     try {
-      toggleDetails(false);
+      if (!STATE.options?.alwaysShowComment) {
+        toggleDetails(false);
+      }
     } catch {}
   });
 
@@ -332,7 +334,7 @@ function openModal(invoker?: HTMLElement) {
     counter.textContent = `${comment.value.length}/500`;
   });
 
-  // Hide details by default; reveal only on thumbs down
+  // Hide details by default; reveal only on thumbs down (unless alwaysShowComment is true)
   function toggleDetails(show: boolean) {
     const disp = show ? '' : 'none';
     commentLabel.style.display = disp;
@@ -342,7 +344,8 @@ function openModal(invoker?: HTMLElement) {
       setTimeout(() => comment.focus(), 0);
     }
   }
-  toggleDetails(false);
+  // Show comment field by default if alwaysShowComment option is enabled
+  toggleDetails(STATE.options?.alwaysShowComment ?? false);
 
   // removed Name/Email field
 

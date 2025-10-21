@@ -32,6 +32,8 @@ export interface InitOptions {
   hotkeyLabel?: string;
   /** If true, intercept Cmd/Ctrl+F to open the modal when using the 'text' FAB variant. Defaults to true. */
   interceptFind?: boolean;
+  /** If true, always show the comment field. If false, only show it when user clicks thumbs down. Defaults to false. */
+  alwaysShowComment?: boolean;
 }
 
 export interface RenderOptions {
