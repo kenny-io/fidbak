@@ -1,4 +1,4 @@
-export type Palette = 'emerald' | 'indigo' | 'rose' | 'amber' | 'violet' | 'cyan' | 'slate';
+export type Palette = 'default' | 'emerald' | 'indigo' | 'rose' | 'amber' | 'violet' | 'cyan' | 'slate';
 export type Theme =
   | 'light'
   | 'dark'
@@ -21,7 +21,7 @@ export interface InitOptions {
   webhookSecret?: string; // optional HMAC secret used to sign webhook body
   debounceMs?: number; // default 10 * 60 * 1000
   policy?: PolicyOptions; // client-provided behavior controls
-  /** Enable verbose client logs (also enabled if localStorage['fidbak:debug']==='1'). */
+  /** Enable verbose client logs (also enabled if localStorage['fidbak:debug']=== '1'). */
   debug?: boolean;
   themeOverrides?: ThemeOverrides; // allow brands to customize look & feel
   /** Choose the Floating Action Button variant. Defaults to 'icon'. */
@@ -30,6 +30,10 @@ export interface InitOptions {
   fabText?: string;
   /** Small hotkey label badge text shown on the right in text FAB. Defaults to 'F'. */
   hotkeyLabel?: string;
+  /** If true, intercept Cmd/Ctrl+F to open the modal when using the 'text' FAB variant. Defaults to true. */
+  interceptFind?: boolean;
+  /** If true, always show the comment field. If false, only show it when user clicks thumbs down. Defaults to false. */
+  alwaysShowComment?: boolean;
 }
 
 export interface RenderOptions {

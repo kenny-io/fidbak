@@ -24,10 +24,13 @@
       <div class="content">
         <h1>Welcome</h1>
         <p>This is a simple static docs site to test the Fidbak feedback widget.</p>
-        <div style="margin:12px 0; display:flex; gap:8px; align-items:center">
+        <div style="margin:12px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
           <label>FAB Variant:</label>
           <button id="v-icon" type="button">Icon</button>
           <button id="v-text" type="button">Text</button>
+          <span style="margin-left:16px; padding-left:16px; border-left:1px solid #e5e7eb">
+            <label><input type="checkbox" id="always-show" /> Always show comment field</label>
+          </span>
         </div>
         <h2>Section A</h2>
         <p>Scroll and select some text, then submit feedback.</p>
@@ -64,14 +67,21 @@
           fab: { size: 64 }
         },
       };
+      // Helper to get current alwaysShowComment state
+      const getAlwaysShow = () => document.getElementById('always-show').checked;
+      
       // default to text
-      fidbak('init', { ...base, apiBaseUrl, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F' });
+      fidbak('init', { ...base, apiBaseUrl, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F', alwaysShowComment: getAlwaysShow() });
 
       document.getElementById('v-icon').addEventListener('click', () => {
-        fidbak('init', { ...base, apiBaseUrl, fabVariant: 'icon' });
+        fidbak('init', { ...base, apiBaseUrl, fabVariant: 'icon', alwaysShowComment: getAlwaysShow() });
       });
       document.getElementById('v-text').addEventListener('click', () => {
-        fidbak('init', { ...base, apiBaseUrl, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F' });
+        fidbak('init', { ...base, apiBaseUrl, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F', alwaysShowComment: getAlwaysShow() });
+      });
+      document.getElementById('always-show').addEventListener('change', () => {
+        // Re-init with current variant (default to text)
+        fidbak('init', { ...base, apiBaseUrl, fabVariant: 'text', fabText: 'Feedback', hotkeyLabel: 'F', alwaysShowComment: getAlwaysShow() });
       });
     </script>
   </body>

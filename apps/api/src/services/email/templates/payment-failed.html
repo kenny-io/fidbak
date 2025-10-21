@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Failed - Fidbak</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f9fafb;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); padding: 40px 40px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">
+                ⚠️ Payment Issue
+              </h1>
+              <p style="margin: 8px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
+                Action required to maintain service
+              </p>
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <p style="margin: 0 0 8px; color: #111827; font-size: 16px; line-height: 1.6;">
+                Hi {first_name},
+              </p>
+
+              <p style="margin: 0 0 16px; color: #4b5563; font-size: 16px; line-height: 1.6;">
+                I wanted to let you know that I wasn't able to process your payment for your Fidbak Pro subscription. This could be due to an expired card, insufficient funds, or a temporary issue with your bank.
+              </p>
+
+              <!-- Urgent Message -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+                <tr>
+                  <td style="background-color: #fef2f2; padding: 20px; border-radius: 8px; border-left: 4px solid #dc2626;">
+                    <p style="margin: 0 0 12px; color: #dc2626; font-size: 14px; line-height: 1.5; font-weight: 600;">⚠️ Important</p>
+                    <p style="margin: 0; color: #dc2626; font-size: 14px; line-height: 1.5;">Your service will continue for {grace_period_days} more day{grace_period_days !== 1 ? 's' : ''}, but I need to resolve this payment issue to avoid service interruption.</p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Payment Details -->
+              <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 24px;">
+                <h3 style="margin: 0 0 16px; color: #111827; font-size: 16px; font-weight: 600;">Payment Details</h3>
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">
+                      <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-size: 14px;">Plan:</span>
+                        <span style="color: #111827; font-size: 14px; font-weight: 500;">Pro Plan</span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">
+                      <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-size: 14px;">Amount:</span>
+                        <span style="color: #111827; font-size: 14px; font-weight: 500;">$29.00/month</span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #e2e8f0;">
+                      <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-size: 14px;">Failed on:</span>
+                        <span style="color: #111827; font-size: 14px; font-weight: 500;">{failed_date}</span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0;">
+                      <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #64748b; font-size: 14px;">Next attempt:</span>
+                        <span style="color: #111827; font-size: 14px; font-weight: 500;">{retry_date}</span>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+
+              <!-- Common Solutions -->
+              <div style="margin-bottom: 24px;">
+                <h3 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">Common Solutions</h3>
+                
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">
+                  <tr>
+                    <td style="padding: 12px; background-color: #f0f9ff; border-radius: 6px; border-left: 3px solid #0ea5e9;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: #0ea5e9; font-size: 16px;">💳</span>
+                        <span style="color: #0c4a6e; font-size: 14px; font-weight: 500;">Update your payment method</span>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">
+                  <tr>
+                    <td style="padding: 12px; background-color: #f0f9ff; border-radius: 6px; border-left: 3px solid #0ea5e9;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: #0ea5e9; font-size: 16px;">🏦</span>
+                        <span style="color: #0c4a6e; font-size: 14px; font-weight: 500;">Check with your bank for any restrictions</span>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="padding: 12px; background-color: #f0f9ff; border-radius: 6px; border-left: 3px solid #0ea5e9;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: #0ea5e9; font-size: 16px;">🔄</span>
+                        <span style="color: #0c4a6e; font-size: 14px; font-weight: 500;">Try a different card or payment method</span>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+
+              <!-- CTA Buttons -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+                <tr>
+                  <td align="center" style="padding-bottom: 12px;">
+                    <a href="{update_payment_url}" style="display: inline-block; background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #ffffff; text-decoration: none; padding: 16px 32px; border-radius: 8px; font-weight: 600; font-size: 16px; margin-right: 12px;">
+                      Update Payment Method
+                    </a>
+                    <a href="{billing_url}" style="display: inline-block; background: transparent; color: #dc2626; text-decoration: none; padding: 16px 32px; border-radius: 8px; font-weight: 600; font-size: 16px; border: 2px solid #dc2626;">
+                      View Billing
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Support Message -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+                <tr>
+                  <td style="background-color: #fef3c7; padding: 20px; border-radius: 8px; border-left: 4px solid #f97316;">
+                    <p style="margin: 0 0 12px; color: #78350f; font-size: 14px; line-height: 1.5; font-weight: 600;">🤝 Need help?</p>
+                    <p style="margin: 0; color: #78350f; font-size: 14px; line-height: 1.5;">If you're having trouble updating your payment method, reply to this email and I'll help you resolve this quickly.</p>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0 0 4px; color: #4b5563; font-size: 16px; line-height: 1.6;">
+                I'm here to help!
+              </p>
+              <br>
+
+              <p style="margin: 0; color: #111827; font-size: 16px; line-height: 1.6;">
+                <strong>Kenny</strong><br>
+                <span style="color: #6b7280; font-size: 14px;">Founder, Fidbak</span>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 24px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #9ca3af; font-size: 12px; text-align: center; line-height: 1.5;">
+                © 2025 Fidbak. All rights reserved.<br>
+                <a href="{unsubscribe_url}" style="color: #9ca3af;">Unsubscribe</a> • <a href="{preferences_url}" style="color: #9ca3af;">Email Preferences</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

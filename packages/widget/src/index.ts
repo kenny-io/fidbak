@@ -9,6 +9,7 @@ const STATE: {
   container?: HTMLElement;
   currentRating?: 'up' | 'down';
   lastFocus?: HTMLElement | null;
+  findHandler?: (e: KeyboardEvent) => void;
 } = { inited: false };
 
 // -- debug helpers (opt-in via options.debug or localStorage['fidbak:debug']==='1')
@@ -39,13 +40,14 @@ function parseTheme() {
   const raw = (STATE.options?.theme || 'auto') as string;
   // Accept: 'light' | 'dark' | 'auto' | palette | 'mode:palette'
   let mode: 'light' | 'dark' | 'auto' = 'auto';
-  let palette = 'emerald';
+  let palette = 'default';
   if (raw.includes(':')) {
     const [m, p] = raw.split(':', 2);
     if (m === 'light' || m === 'dark' || m === 'auto') mode = m;
     if (p) palette = p as any;
   } else if (raw === 'light' || raw === 'dark' || raw === 'auto') {
     mode = raw;
+    // Use neutral 'default' palette for mode-only themes
   } else {
     // treat raw as palette shorthand, with auto mode
     palette = raw as any;
@@ -251,7 +253,7 @@ function openModal(invoker?: HTMLElement) {
   const sub = document.createElement('p');
   sub.style.margin = '8px 0 0 0';
   sub.style.fontSize = '13px';
-  sub.style.color = '#6b7280';
+  sub.style.color = theme === 'dark' ? v.colors.textSecondaryDark : v.colors.textSecondaryLight;
   sub.textContent = `Was the content on this page helpful or lacking? let us know below`;
 
   const rateLabel = document.createElement('div');
@@ -273,9 +275,11 @@ function openModal(invoker?: HTMLElement) {
   up.addEventListener('click', () => {
     STATE.currentRating = 'up';
     selectThumb(up, down, theme, 'up');
-    // Hide details when experience is positive
+    // Hide details when experience is positive (unless alwaysShowComment is true)
     try {
-      toggleDetails(false);
+      if (!STATE.options?.alwaysShowComment) {
+        toggleDetails(false);
+      }
     } catch {}
   });
 
@@ -294,7 +298,8 @@ function openModal(invoker?: HTMLElement) {
   });
 
   const commentLabel = document.createElement('div');
-  commentLabel.innerHTML = 'Tell us more <span style="color:#9ca3af">(optional)</span>';
+  const optionalColor = theme === 'dark' ? v.colors.textSecondaryDark : v.colors.textSecondaryLight;
+  commentLabel.innerHTML = `Tell us more <span style="color:${optionalColor}">(optional)</span>`;
   commentLabel.style.fontSize = '14px';
   commentLabel.style.margin = '6px 0 6px 0';
 
@@ -323,13 +328,13 @@ function openModal(invoker?: HTMLElement) {
   const counter = document.createElement('div');
   counter.style.textAlign = 'right';
   counter.style.fontSize = '12px';
-  counter.style.color = '#9ca3af';
+  counter.style.color = theme === 'dark' ? v.colors.textSecondaryDark : v.colors.textSecondaryLight;
   counter.textContent = `0/500`;
   comment.addEventListener('input', () => {
     counter.textContent = `${comment.value.length}/500`;
   });
 
-  // Hide details by default; reveal only on thumbs down
+  // Hide details by default; reveal only on thumbs down (unless alwaysShowComment is true)
   function toggleDetails(show: boolean) {
     const disp = show ? '' : 'none';
     commentLabel.style.display = disp;
@@ -339,7 +344,8 @@ function openModal(invoker?: HTMLElement) {
       setTimeout(() => comment.focus(), 0);
     }
   }
-  toggleDetails(false);
+  // Show comment field by default if alwaysShowComment option is enabled
+  toggleDetails(STATE.options?.alwaysShowComment ?? false);
 
   // removed Name/Email field
 
@@ -379,7 +385,7 @@ function openModal(invoker?: HTMLElement) {
       const p = document.createElement('p');
       p.textContent = 'We appreciate your feedback.';
       p.style.margin = '0';
-      p.style.color = '#9ca3af';
+      p.style.color = theme === 'dark' ? v.colors.textSecondaryDark : v.colors.textSecondaryLight;
       p.style.fontSize = '14px';
       const close = document.createElement('button');
       close.type = 'button';
@@ -489,6 +495,31 @@ export function init(options: InitOptions) {
   STATE.inited = true;
   STATE.options = options;
   dlog('init options', { ...options, webhookUrl: options.webhookUrl ? '[redacted]' : undefined });
+  // (Re)bind Cmd/Ctrl+F interception when using text FAB, unless explicitly disabled
+  try {
+    if (STATE.findHandler) {
+      window.removeEventListener('keydown', STATE.findHandler as any, true);
+      STATE.findHandler = undefined;
+    }
+    const shouldIntercept = (STATE.options?.interceptFind !== false) && ((STATE.options?.fabVariant || 'icon') === 'text');
+    if (shouldIntercept) {
+      const handler = (e: KeyboardEvent) => {
+        const key = (e.key || '').toLowerCase();
+        if (key === 'f' && (e.metaKey || e.ctrlKey)) {
+          const t = e.target as HTMLElement | null;
+          const tag = (t?.tagName || '').toLowerCase();
+          const isEditable = !!(t && (tag === 'input' || tag === 'textarea' || tag === 'select' || (t as any).isContentEditable));
+          if (isEditable) return; // don't override find while typing
+          const modalOpen = !!document.querySelector('[role="dialog"][aria-modal="true"]');
+          if (modalOpen) return;
+          e.preventDefault();
+          openModal();
+        }
+      };
+      STATE.findHandler = handler;
+      window.addEventListener('keydown', handler, { capture: true } as any);
+    }
+  } catch {}
   renderFAB();
 }
 
@@ -517,6 +548,8 @@ function themeVars() {
     cardBgDark: o.colors?.cardBgDark || p.cardBgDark,
     textLight: o.colors?.textLight || p.textLight,
     textDark: o.colors?.textDark || p.textDark,
+    textSecondaryLight: (o.colors as any)?.textSecondaryLight || p.textSecondaryLight,
+    textSecondaryDark: (o.colors as any)?.textSecondaryDark || p.textSecondaryDark,
     borderLight: o.colors?.borderLight || p.borderLight,
     borderDark: o.colors?.borderDark || p.borderDark,
     focusRing: o.colors?.focusRing || p.focusRing,
@@ -573,11 +606,30 @@ function themeVars() {
 function getThemeSpec(name: string) {
   // Each theme defines neutrals + accents to restyle the entire modal.
   const spec: Record<string, any> = {
+    default: {
+      overlay: 'rgba(0,0,0,0.4)',
+      cardBgLight: '#ffffff', cardBgDark: '#111827',
+      inputBgLight: '#f9fafb', inputBgDark: '#1f2937',
+      textLight: '#111827', textDark: '#f9fafb',
+      textSecondaryLight: '#6b7280', textSecondaryDark: '#d1d5db',
+      borderLight: '#e5e7eb', borderDark: '#374151',
+      focusRing: 'rgba(59,130,246,0.45)',
+      primaryStart: '#3b82f6', primaryEnd: '#2563eb', primaryText: '#ffffff',
+      ghostBorderLight: '#e5e7eb', ghostBorderDark: '#4b5563',
+      fabBgLight: '#111827', fabBgDark: '#f9fafb', fabTextLight: '#ffffff', fabTextDark: '#111827',
+      sendBtnBgLight: '#f0fdf4', sendBtnBorderLight: '#86efac', sendBtnTextLight: '#065f46',
+      sendBtnBgDark: '#14532d', sendBtnBorderDark: '#4ade80', sendBtnTextDark: '#dcfce7',
+      cancelBtnBgLight: '#fef2f2', cancelBtnBorderLight: '#fecaca', cancelBtnTextLight: '#991b1b',
+      cancelBtnBgDark: '#7f1d1d', cancelBtnBorderDark: '#fca5a5', cancelBtnTextDark: '#fecaca',
+      thumbUpBgLight: '#f9fafb', thumbUpBgDark: '#1f2937', thumbUpBorder: '#9ca3af',
+      thumbDownBgLight: '#f9fafb', thumbDownBgDark: '#1f2937', thumbDownBorder: '#9ca3af',
+    },
     emerald: {
       overlay: 'rgba(16,185,129,0.10)',
       cardBgLight: '#f0fdf4', cardBgDark: '#052e16',
       inputBgLight: '#ecfdf5', inputBgDark: '#064e3b',
       textLight: '#052e16', textDark: '#d1fae5',
+      textSecondaryLight: '#065f46', textSecondaryDark: '#a7f3d0',
       borderLight: '#bbf7d0', borderDark: '#14532d',
       focusRing: 'rgba(16,185,129,0.45)',
       primaryStart: '#22c55e', primaryEnd: '#16a34a', primaryText: '#052e16',
@@ -595,6 +647,7 @@ function getThemeSpec(name: string) {
       cardBgLight: '#eef2ff', cardBgDark: '#1e1b4b',
       inputBgLight: '#eef2ff', inputBgDark: '#1e1b4b',
       textLight: '#1e1b4b', textDark: '#e0e7ff',
+      textSecondaryLight: '#4338ca', textSecondaryDark: '#c7d2fe',
       borderLight: '#c7d2fe', borderDark: '#312e81',
       focusRing: 'rgba(99,102,241,0.45)',
       primaryStart: '#6366f1', primaryEnd: '#4f46e5', primaryText: '#1e1b4b',
@@ -612,6 +665,7 @@ function getThemeSpec(name: string) {
       cardBgLight: '#fff1f2', cardBgDark: '#4c0519',
       inputBgLight: '#fff1f2', inputBgDark: '#4c0519',
       textLight: '#4c0519', textDark: '#ffe4e6',
+      textSecondaryLight: '#9f1239', textSecondaryDark: '#fecdd3',
       borderLight: '#fecdd3', borderDark: '#7f1d1d',
       focusRing: 'rgba(244,63,94,0.45)',
       primaryStart: '#f43f5e', primaryEnd: '#e11d48', primaryText: '#4c0519',
@@ -629,6 +683,7 @@ function getThemeSpec(name: string) {
       cardBgLight: '#fffbeb', cardBgDark: '#451a03',
       inputBgLight: '#fffbeb', inputBgDark: '#451a03',
       textLight: '#78350f', textDark: '#fde68a',
+      textSecondaryLight: '#92400e', textSecondaryDark: '#fcd34d',
       borderLight: '#fcd34d', borderDark: '#78350f',
       focusRing: 'rgba(245,158,11,0.45)',
       primaryStart: '#f59e0b', primaryEnd: '#d97706', primaryText: '#78350f',
@@ -646,6 +701,7 @@ function getThemeSpec(name: string) {
       cardBgLight: '#f5f3ff', cardBgDark: '#2e1065',
       inputBgLight: '#f5f3ff', inputBgDark: '#2e1065',
       textLight: '#2e1065', textDark: '#ede9fe',
+      textSecondaryLight: '#6d28d9', textSecondaryDark: '#ddd6fe',
       borderLight: '#ddd6fe', borderDark: '#4c1d95',
       focusRing: 'rgba(139,92,246,0.45)',
       primaryStart: '#8b5cf6', primaryEnd: '#7c3aed', primaryText: '#2e1065',
@@ -663,6 +719,7 @@ function getThemeSpec(name: string) {
       cardBgLight: '#ecfeff', cardBgDark: '#083344',
       inputBgLight: '#ecfeff', inputBgDark: '#083344',
       textLight: '#083344', textDark: '#cffafe',
+      textSecondaryLight: '#155e75', textSecondaryDark: '#a5f3fc',
       borderLight: '#a5f3fc', borderDark: '#164e63',
       focusRing: 'rgba(6,182,212,0.45)',
       primaryStart: '#06b6d4', primaryEnd: '#0891b2', primaryText: '#083344',
@@ -680,6 +737,7 @@ function getThemeSpec(name: string) {
       cardBgLight: '#f1f5f9', cardBgDark: '#0f172a',
       inputBgLight: '#f8fafc', inputBgDark: '#0f172a',
       textLight: '#0f172a', textDark: '#e2e8f0',
+      textSecondaryLight: '#475569', textSecondaryDark: '#cbd5e1',
       borderLight: '#cbd5e1', borderDark: '#334155',
       focusRing: 'rgba(100,116,139,0.45)',
       primaryStart: '#64748b', primaryEnd: '#475569', primaryText: '#0f172a',
@@ -693,7 +751,7 @@ function getThemeSpec(name: string) {
       thumbDownBgLight: '#fff1f2', thumbDownBgDark: '#4c0519', thumbDownBorder: '#fb7185',
     },
   };
-  return spec[name] || spec['emerald'];
+  return spec[name] || spec['default'];
 }
 
 // Minimal style helpers (keep bundle tiny and dependency-free)
